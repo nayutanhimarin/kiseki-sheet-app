@@ -21,7 +21,23 @@ DISEASE_OPTIONS = ["敗血症性ショック", "心原性ショック", "心臓�
 PHASE_LABELS = ["超急性期", "維持期", "回復期", "転棟期"]
 # ★★★要因タグの選択肢を定義★★★
 FACTOR_TAGS = ["#循環", "#呼吸", "#意識/鎮静", "#腎/体液", "#活動/リハ", "#栄養/消化管", "#感染/炎症"]
-
+# ★★★ イベントフラグの定義 ★★★
+EVENT_FLAGS = {
+    # イベント名: { カテゴリ, 色, マーカー }
+    "抜管":      {"category": "#呼吸", "color": "green", "marker": "^"},
+    "再挿管":    {"category": "#呼吸", "color": "red", "marker": "v"},
+    "気管切開":  {"category": "#呼吸", "color": "blue", "marker": "v"},
+    "SBT成功":   {"category": "#呼吸", "color": "green", "marker": "s"},
+    "昇圧薬変更": {"category": "#循環", "color": "orange", "marker": "o"},
+    "新規不整脈": {"category": "#循環", "color": "red", "marker": "o"},
+    "出血イベント": {"category": "#循環", "color": "darkred", "marker": "o"},
+    "腎代替療法開始": {"category": "#腎/体液", "color": "purple", "marker": "D"},
+    "腎代替療法終了": {"category": "#腎/体液", "color": "purple", "marker": "D"},
+    "せん妄":      {"category": "#意識/鎮静", "color": "magenta", "marker": "*"},
+    "新規感染症":  {"category": "#感染/炎症", "color": "brown", "marker": "X"},
+    "離床開始":    {"category": "#活動/リハ", "color": "cyan", "marker": "P"},
+    "経口摂取開始": {"category": "#栄養/消化管", "color": "lime", "marker": "+"}
+}
 # --- 関数 ---
 def load_data(filename):
     """CSVファイルを読み込む"""
@@ -117,37 +133,50 @@ def run_app():
                         disease_group = st.text_input("疾患群を自由記載")
                     record_date = st.date_input("日付", datetime.date.today())
                     time_of_day = st.selectbox("時間帯", options=["朝", "夕"])
-                    score = st.slider("治療スコア", 0, 100, 50)
-                    event_text = st.text_input("イベント（任意）")
-                    # ★★★要因タグの入力ウィジェットを追加★★★
+                    # 1. スコア入力UI
+                    st.write("**治療スコア**")
+                    if 'score_value' not in st.session_state:
+                        st.session_state.score_value = 10
+                    # 10点刻みのスライダーで、大まかな値を設定
+                    slider_score = st.slider("大まかに調整", 0, 100, st.session_state.score_value, step=10)
+                    
+                    # 1点刻みの数値入力で、細かい値を調整
+                    number_score = st.number_input("細かく調整", 0, 100, slider_score, step=1)
+                    
+                    # 最終的なスコアをセッションステートに保存
+                    st.session_state.score_value = number_score
+                    score = number_score
+
+                    # 2. イベント入力UI
+                    st.write("**主要イベント**")
+                    major_event_options = [""] + list(EVENT_FLAGS.keys())
+                    event_text = st.selectbox("主要イベントを選択", options=major_event_options, label_visibility="collapsed")
+
+                    # 3. 要因タグ入力UI
+                    st.write("**スコア判断の要因タグ**")
                     selected_tags = st.multiselect(
                         "スコア判断の要因タグ（複数選択可）",
-                        options=FACTOR_TAGS
-                    )                    
+                        options=FACTOR_TAGS,
+                        label_visibility="collapsed"
+                    )
+                    
                     if st.button("記録・修正する"):
-                         # 選択されたタグをカンマ区切りの文字列に変換
                         tags_str = ", ".join(selected_tags)
-                        new_data = pd.DataFrame([{""
-                        "アプリ用患者ID": patient_id_to_use,
-                        "日付": str(record_date),
-                        "時間帯": time_of_day,
-                        "スコア": int(score), 
-                        "イベント": event_text,
-                        "要因タグ":tags_str, # ★★★新しいデータを追加★★★ 
-                        "ステータス": "在室中", 
-                        "疾患群": disease_group}])
+                        new_data = pd.DataFrame([{
+                            "アプリ用患者ID": patient_id_to_use, 
+                            "日付": str(record_date), 
+                            "時間帯": time_of_day, 
+                            "スコア": int(score), 
+                            "イベント": event_text, 
+                            "ステータス": "在室中", 
+                            "疾患群": disease_group,
+                            "要因タグ": tags_str
+                        }])
                         st.session_state.df = pd.concat([st.session_state.df, new_data], ignore_index=True)
                         st.session_state.df = st.session_state.df.drop_duplicates(subset=['アプリ用患者ID', '日付', '時間帯'], keep='last').sort_values(by=["アプリ用患者ID", "日付", "時間帯"])
                         st.session_state.df.to_csv(DATA_FILE, index=False)
                         st.success("データを記録しました！")
                         st.rerun()
-                    
-                    if selected_patient != NEW_PATIENT_OPTION:
-                        if st.button("この患者をアーカイブする", type="secondary"):
-                            st.session_state.df.loc[st.session_state.df['アプリ用患者ID'] == patient_id_to_use, 'ステータス'] = '退室済'
-                            st.session_state.df.to_csv(DATA_FILE, index=False)
-                            st.success(f"{patient_id_to_use}さんをアーカイブしました。")
-                            st.rerun()
             
             st.write("---")
             if st.button("ログアウト"):
@@ -213,30 +242,40 @@ def run_app():
                     df_graph['プロット用日時'] = df_graph.apply(create_plot_datetime, axis=1)
                     df_graph = df_graph.sort_values(by='プロット用日時')
 
-                    fig, ax = plt.subplots(figsize=(12, 7))
-                    
-                    # 3. グラフのX軸に、新しく作った「プロット用日時」を使用
+                    fig, ax = plt.subplots(figsize=(12, 7))            
                     ax.plot(df_graph['プロット用日時'], df_graph['スコア'], marker='o', linestyle='-', label=patient_id_to_use)
+                    
+                            # ★★★ ここに、新しいイベント・フラグのコードを貼り付ける ★★★
                     events_to_plot = df_graph.dropna(subset=['イベント'])
-                    event_pos_toggle = True
                     if not events_to_plot.empty:
                         for idx, row in events_to_plot.iterrows():
-                            y_pos = 95 if event_pos_toggle else 85
-                            ax.axvline(x=row['プロット用日時'], color='gray', linestyle='--', linewidth=1, zorder=1)
-                            ax.annotate(row['イベント'], xy=(row['プロット用日時'], y_pos), xytext=(0, 10), textcoords='offset points', ha='center', va='bottom', fontsize=24, bbox=dict(boxstyle='round,pad=0.3', fc='yellow', alpha=0.7), zorder=11)
-                            event_pos_toggle = not event_pos_toggle
-
-                    unique_dates = df_graph['日付'].unique()
-                    start_date = pd.to_datetime(unique_dates.min())
-                    end_date = pd.to_datetime(unique_dates.max())
-                    if len(unique_dates) < 5:
-                        end_date = start_date + datetime.timedelta(days=4)
-                    ax.set_xlim(start_date - datetime.timedelta(days=0.5), end_date + datetime.timedelta(days=0.5))
-                    
-                    if len(unique_dates) > 1:
-                        ax.xaxis.set_major_locator(mdates.DayLocator(interval=1))
-                    ax.xaxis.set_major_formatter(mdates.DateFormatter('%m-%d'))
-                    
+                            event_name = row['イベント']
+                            plot_time = row['プロット用日時']
+                            
+                            if event_name in EVENT_FLAGS:
+                                # 主要イベントの場合：特別なフラグを描画
+                                flag = EVENT_FLAGS[event_name]
+                                ax.scatter(plot_time, row['スコア'], 
+                                           color=flag['color'], 
+                                           marker=flag['marker'], 
+                                           s=200, 
+                                           zorder=12,
+                                           label=event_name)
+                                ax.annotate(event_name, 
+                                            xy=(plot_time, row['スコア']),
+                                            xytext=(0, 15), textcoords='offset points',
+                                            ha='center', va='bottom', fontsize=10,
+                                            bbox=dict(boxstyle='round,pad=0.2', fc=flag['color'], alpha=0.7))
+                            else:
+                                # 自由記述イベントの場合：これまで通りの縦線とテキスト
+                                ax.axvline(x=plot_time, color='gray', linestyle='--', linewidth=1, zorder=1)
+                                ax.annotate(event_name, 
+                                            xy=(plot_time, 95), 
+                                            xytext=(0, 10), textcoords='offset points',
+                                            ha='center', va='bottom', fontsize=12,
+                                            bbox=dict(boxstyle='round,pad=0.3', fc='yellow', alpha=0.7), zorder=11)
+    
+                    # グラフの整形と背景色
                     ax.set_ylim(0, 100)
                     ax.set_title("軌跡シート", fontsize=24)
                     ax.set_ylabel("フェーズスコア", fontsize=24)
