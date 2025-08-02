@@ -28,14 +28,20 @@ EVENT_FLAGS = {
     "再挿管":    {"category": "#呼吸", "color": "red", "marker": "v"},
     "気管切開":  {"category": "#呼吸", "color": "blue", "marker": "v"},
     "SBT成功":   {"category": "#呼吸", "color": "green", "marker": "s"},
+    "SBT失敗":   {"category": "#呼吸", "color": "green", "marker": "s"},
     "昇圧薬変更": {"category": "#循環", "color": "orange", "marker": "o"},
     "新規不整脈": {"category": "#循環", "color": "red", "marker": "o"},
     "出血イベント": {"category": "#循環", "color": "darkred", "marker": "o"},
     "腎代替療法開始": {"category": "#腎/体液", "color": "purple", "marker": "D"},
     "腎代替療法終了": {"category": "#腎/体液", "color": "purple", "marker": "D"},
     "せん妄":      {"category": "#意識/鎮静", "color": "magenta", "marker": "*"},
+    "SAT成功":      {"category": "#意識/鎮静", "color": "magenta", "marker": "*"},
+    "SAT失敗":      {"category": "#意識/鎮静", "color": "magenta", "marker": "*"},
     "新規感染症":  {"category": "#感染/炎症", "color": "brown", "marker": "X"},
-    "離床開始":    {"category": "#活動/リハ", "color": "cyan", "marker": "P"},
+    "端坐位":    {"category": "#活動/リハ", "color": "cyan", "marker": "P"},
+    "立位":    {"category": "#活動/リハ", "color": "cyan", "marker": "P"},
+    "歩行":    {"category": "#活動/リハ", "color": "cyan", "marker": "P"},
+    "経管栄養開始": {"category": "#栄養/消化管", "color": "lime", "marker": "+"},
     "経口摂取開始": {"category": "#栄養/消化管", "color": "lime", "marker": "+"}
 }
 # --- 関数 ---
@@ -148,10 +154,14 @@ def run_app():
                     score = number_score
 
                     # 2. イベント入力UI
-                    st.write("**主要イベント**")
+                    # --- ★★★ここからが今回の修正点(1)★★★ ---
+                    st.write("**イベント**")
                     major_event_options = [""] + list(EVENT_FLAGS.keys())
-                    event_text = st.selectbox("主要イベントを選択", options=major_event_options, label_visibility="collapsed")
-
+                    selected_event = st.selectbox("主要イベントを選択（任意）", options=major_event_options)
+                    
+                    # 選択された主要イベントを、自由記述欄の初期値にする
+                    event_text = st.text_input("イベント（自由記述も可）", value=selected_event)
+                   
                     # 3. 要因タグ入力UI
                     st.write("**スコア判断の要因タグ**")
                     selected_tags = st.multiselect(
@@ -275,16 +285,16 @@ def run_app():
                                             ha='center', va='bottom', fontsize=12,
                                             bbox=dict(boxstyle='round,pad=0.3', fc='yellow', alpha=0.7), zorder=11)
     
-                    # グラフの整形と背景色
+                    # --- ★★★ここからが今回の修正点(2)★★★ ---
+                    # グラフの整形
                     ax.set_ylim(0, 100)
-                    ax.set_title("軌跡シート", fontsize=24)
-                    ax.set_ylabel("フェーズスコア", fontsize=24)
-                    ax.set_xlabel("日付", fontsize=24)
+                    ax.set_title("軌跡シート", fontsize=16, pad=20) # タイトルの位置を少し上げる
+                    ax.set_ylabel("フェーズスコア", fontsize=16)
+                    ax.set_xlabel("日付", fontsize=16)
                     ax.tick_params(axis='both', labelsize=16)
                     plt.xticks(rotation=30, ha="right")
-                    if ax.get_legend_handles_labels()[0]:
-                        ax.legend(title='アプリ用患者ID', fontsize=24, title_fontsize=24, loc='upper right')
-                    plt.grid(True, linestyle='--', alpha=0.6)
+                    
+
                     
                     bbox_style = dict(boxstyle='round,pad=0.3', fc='white', ec='none', alpha=0.8)
                     ax.axhspan(0, 20, color='pink', alpha=0.3)
