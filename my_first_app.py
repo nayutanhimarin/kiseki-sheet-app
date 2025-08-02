@@ -14,20 +14,24 @@ MASTER_ID = "master_admin"
 MASTER_PASSWORD = "master_password_123"
 PASSWORDS = {
     "hospital_a": "pass123",
+    "test": "test123",
     "hospital_b": "Kiseki-sheet"
 }
 DISEASE_OPTIONS = ["敗血症性ショック", "心原性ショック", "心臓・大血管術後", "その他（自由記載）"]
 PHASE_LABELS = ["超急性期", "維持期", "回復期", "転棟期"]
+# ★★★要因タグの選択肢を定義★★★
+FACTOR_TAGS = ["#循環", "#呼吸", "#意識/鎮静", "#腎/体液", "#活動/リハ", "#栄養/消化管", "#感染/炎症"]
 
 # --- 関数 ---
 def load_data(filename):
     """CSVファイルを読み込む"""
-    columns = ["アプリ用患者ID", "日付", "時間帯", "スコア", "イベント", "ステータス", "疾患群"]
+    # ★★★列名に「要因タグ」を追加★★★
+    columns = ["アプリ用患者ID", "日付", "時間帯", "スコア", "イベント", "ステータス", "疾患群", "要因タグ"]
     if os.path.exists(filename):
-        df = pd.read_csv(filename, dtype={'イベント': str, '疾患群': str})
+        df = pd.read_csv(filename, dtype={'イベント': str, '疾患群': str, '要因タグ': str})
         for col in columns:
             if col not in df.columns:
-                df[col] = None
+                df[col] = None # 古いデータファイルに新しい列を追加
         return df
     else:
         return pd.DataFrame(columns=columns)
@@ -115,9 +119,23 @@ def run_app():
                     time_of_day = st.selectbox("時間帯", options=["朝", "夕"])
                     score = st.slider("治療スコア", 0, 100, 50)
                     event_text = st.text_input("イベント（任意）")
-                    
+                    # ★★★要因タグの入力ウィジェットを追加★★★
+                    selected_tags = st.multiselect(
+                        "スコア判断の要因タグ（複数選択可）",
+                        options=FACTOR_TAGS
+                    )                    
                     if st.button("記録・修正する"):
-                        new_data = pd.DataFrame([{"アプリ用患者ID": patient_id_to_use, "日付": str(record_date), "時間帯": time_of_day, "スコア": int(score), "イベント": event_text, "ステータス": "在室中", "疾患群": disease_group}])
+                         # 選択されたタグをカンマ区切りの文字列に変換
+                        tags_str = ", ".join(selected_tags)
+                        new_data = pd.DataFrame([{""
+                        "アプリ用患者ID": patient_id_to_use,
+                        "日付": str(record_date),
+                        "時間帯": time_of_day,
+                        "スコア": int(score), 
+                        "イベント": event_text,
+                        "要因タグ":tags_str, # ★★★新しいデータを追加★★★ 
+                        "ステータス": "在室中", 
+                        "疾患群": disease_group}])
                         st.session_state.df = pd.concat([st.session_state.df, new_data], ignore_index=True)
                         st.session_state.df = st.session_state.df.drop_duplicates(subset=['アプリ用患者ID', '日付', '時間帯'], keep='last').sort_values(by=["アプリ用患者ID", "日付", "時間帯"])
                         st.session_state.df.to_csv(DATA_FILE, index=False)
@@ -176,7 +194,8 @@ def run_app():
                 if not display_df.empty:
                     display_df = calculate_derived_columns(display_df)
                     st.write(f"#### {patient_id_to_use} のデータ")
-                    st.dataframe(display_df.sort_values(by=["日付", "時間帯"]))
+                    st.dataframe(display_df.sort_values(by="日付")) # ★★★データ表に要因タグが表示される★★★
+                    
  # --- グラフ作成コード　★★★ここからが今回の修正点★★★ ---
                     df_graph = display_df.copy()
                     
