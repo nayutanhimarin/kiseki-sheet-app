@@ -1,0 +1,22 @@
+name: Python Code Quality Check
+
+on: [push]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - name: Set up Python
+      uses: actions/setup-python@v3
+      with:
+        python-version: '3.11'
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install flake8
+    - name: Lint with flake8
+      run: |
+        # E9,F63,F7,F82のエラー（重大な構文エラーなど）のみをチェック
+        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
