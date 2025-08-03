@@ -1,0 +1,7 @@
+Anacondaの操作→Gidにコード反映
+・conda activate kiseki_app
+・cd /d G:\マイドライブ\ICU\VSC
+・git add .
+・git commit -m"〇〇を実装"
+・gid push
+
