@@ -221,9 +221,31 @@ def run_app():
                 for key in list(st.session_state.keys()):
                     del st.session_state[key]
                 st.rerun()
-        #マスター管理モード
+        # --- メイン画面 ---
         if facility_id == st.secrets.get("master_credentials", {}).get("id", "master_admin_fallback"):
             st.header("マスター管理者モード")
+            st.write("全施設のアーカイブデータを表示・管理します。")
+            
+            all_files = glob.glob(f"{DATA_FILE_PREFIX}*.csv")
+            if not all_files:
+                st.info("データファイルが見つかりません。")
+            else:
+                all_archived_dfs = []
+                for f in all_files:
+                    df_temp = load_data(f)
+                    archived = df_temp[df_temp['ステータス'] == '退室済']
+                    if not archived.empty:
+                        facility_name = os.path.basename(f).replace(DATA_FILE_PREFIX, '').replace('.csv', '')
+                        archived.insert(0, '施設ID', facility_name)
+                        all_archived_dfs.append(archived)
+                
+                if all_archived_dfs:
+                    master_df = pd.concat(all_archived_dfs, ignore_index=True)
+                    st.dataframe(master_df)
+                    csv_master = master_df.to_csv(index=False).encode('utf-8-sig')
+                    st.download_button("全アーカイブデータをCSVでダウンロード", csv_master, 'master_archived_data.csv', 'text/csv')
+                else:
+                    st.info("アーカイブされたデータを持つ施設はありません。")
         #一般ユーザー
         else:
             if patient_id_to_use:
@@ -345,8 +367,6 @@ def run_app():
                 archived_df = st.session_state.df[st.session_state.df['ステータス'] == '退室済']
                 st.write("#### 退室済（アーカイブ）患者一覧")
                 st.dataframe(archived_df)
-
-                # ★★★ ここから修正 ★★★
                 st.write("---")
                 # アーカイブされている患者IDごとに操作ボタンを生成
                 for patient_id in sorted(archived_df['アプリ用患者ID'].unique()):
@@ -359,6 +379,29 @@ def run_app():
                             st.session_state.df.to_csv(DATA_FILE, index=False)
                             st.success(f"{patient_id}さんを在室中に戻しました。")
                             st.rerun()
+                    
+    # ★★★ ここから統計ダッシュボード機能を追加 ★★★
+            st.write("---")
+            st.header("統計ダッシュボード")
 
+    # 分析対象は「退室済」の患者データ
+            archived_df = st.session_state.df[st.session_state.df['ステータス'] == '退室済'].copy()
+
+            if archived_df.empty:
+                st.info("分析対象となる、アーカイブされた患者データがまだありません。")
+            else:
+        # st.expanderで折りたたみセクションを作成
+                with st.expander("ダッシュボードを表示する", expanded=True):
+
+                    tab1, tab2 = st.tabs(["軌跡の比較", "数値サマリー"])
+
+                    with tab1:
+                        st.subheader("治療軌跡の全体像")
+                        st.write("ここに「軌跡の重ね合わせプロット」と「回復速度の可視化」グラフが入ります。")
+
+                    with tab2:
+                        st.subheader("アウトカムと滞在期間の分析")
+                        st.write("ここに「各フェーズ滞在日数」のグラフと「重要指標サマリー」の表が入ります。")
+    # ★★★ ここまで追加 ★★★
 if __name__ == "__main__":
     run_app()
