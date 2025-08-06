@@ -19,13 +19,14 @@ PHASE_COLORS = {
     "転棟期": "#90ee90"
 }
 FACTOR_SCORE_NAMES = ["循環スコア", "呼吸スコア", "意識_鎮静スコア", "腎_体液スコア", "活動_リハスコア", "栄養_消化管スコア", "感染_炎症スコア"]
-ALL_COLUMN_NAMES = ["アプリ用患者ID", "日付", "時間帯", "総合スコア"] + FACTOR_SCORE_NAMES + ["イベント", "ステータス", "疾患群", "要因タグ"]
+# ★★★ 機能B ★★★
+ALL_COLUMN_NAMES = ["アプリ用患者ID", "日付", "時間帯", "総合スコア"] + FACTOR_SCORE_NAMES + ["イベント", "ステータス", "疾患群", "要因タグ", "退室時転帰"]
 EVENT_FLAGS = {
-    "入室": {"category": "#その他", "color": "black", "marker": "s"},"再手術": {"category": "#その他", "color": "darkred", "marker": "X"},
+    "入室": {"category": "#その他", "color": "red", "marker": "s"},"再手術": {"category": "#その他", "color": "darkred", "marker": "X"},
     "転棟": {"category": "#その他", "color": "blue", "marker": "s"},"抜管": {"category": "#呼吸", "color": "green", "marker": "^"},
-    "再挿管": {"category": "#呼吸", "color": "red", "marker": "v"},"気管切開": {"category": "#呼吸", "color": "blue", "marker": "v"},
+    "挿管": {"category": "#呼吸", "color": "darkred", "marker": "v"},"再挿管": {"category": "#呼吸", "color": "red", "marker": "v"},"気管切開": {"category": "#呼吸", "color": "blue", "marker": "v"},
     "SBT成功": {"category": "#呼吸", "color": "lightgreen", "marker": "s"},"SBT失敗": {"category": "#呼吸", "color": "darkgreen", "marker": "s"},
-    "昇圧薬増量": {"category": "#循環", "color": "darkorange", "marker": "P"},"昇圧薬減量": {"category": "#循環", "color": "orange", "marker": "P"},
+    "昇圧薬開始": {"category": "#循環", "color": "darkorange", "marker": "P"},"昇圧薬増量": {"category": "#循環", "color": "darkorange", "marker": "P"},"昇圧薬減量": {"category": "#循環", "color": "orange", "marker": "P"},
     "昇圧薬離脱": {"category": "#循環", "color": "gold", "marker": "P"},"補助循環開始": {"category": "#循環", "color": "deeppink", "marker": "h"},
     "補助循環weaning": {"category": "#循環", "color": "hotpink", "marker": "h"},"補助循環離脱": {"category": "#循環", "color": "lightpink", "marker": "h"},
     "新規不整脈": {"category": "#循環", "color": "red", "marker": "o"},"出血イベント": {"category": "#循環", "color": "darkred", "marker": "o"},
@@ -318,22 +319,46 @@ def run_app():
             #管理モード
             st.header("管理")
             if patient_id_to_use and not display_df.empty:
+    # ★★★ 機能B ★★★
+                st.write(f"**{patient_id_to_use} の管理**")
+                outcome_options = ["", "軽快", "BSC", "死亡", "その他"]
+                selected_outcome = st.selectbox("退室時転帰を選択してください:", options=outcome_options)
+
                 if st.button(f"{patient_id_to_use} を退室済（アーカイブ）にする"):
-                    st.session_state.df.loc[st.session_state.df['アプリ用患者ID'] == patient_id_to_use, 'ステータス'] = '退室済'
-                    st.session_state.df.to_csv(DATA_FILE, index=False)
-                    st.success(f"{patient_id_to_use} さんをアーカイブしました。")
-                    st.rerun()
+                    if selected_outcome: # 何か選択されている場合のみ実行
+            # 患者の最後の記録に転帰を記録
+                        patient_indices = st.session_state.df[st.session_state.df['アプリ用患者ID'] == patient_id_to_use].index
+                        if not patient_indices.empty:
+                            last_index = patient_indices[-1]
+                            st.session_state.df.loc[last_index, '退室時転帰'] = selected_outcome
+
+            # ステータスを更新
+                        st.session_state.df.loc[st.session_state.df['アプリ用患者ID'] == patient_id_to_use, 'ステータス'] = '退室済'
+
+                        st.session_state.df.to_csv(DATA_FILE, index=False)
+                        st.success(f"{patient_id_to_use} さんを「{selected_outcome}」としてアーカイブしました。")
+                        st.rerun()
+                    else:
+                        st.warning("退室時転帰を選択してください。")
             show_archive = st.checkbox("アーカイブされた患者を表示")
             if show_archive:
                 archived_df = st.session_state.df[st.session_state.df['ステータス'] == '退室済']
                 st.write("#### 退室済（アーカイブ）患者一覧")
                 st.dataframe(archived_df)
+
+                # ★★★ ここから修正 ★★★
+                st.write("---")
+                # アーカイブされている患者IDごとに操作ボタンを生成
                 for patient_id in sorted(archived_df['アプリ用患者ID'].unique()):
-                    if st.button("在室中に戻す", key=f"reactivate_{patient_id}"):
-                        st.session_state.df.loc[st.session_state.df['アプリ用患者ID'] == patient_id, 'ステータス'] = '在室中'
-                        st.session_state.df.to_csv(DATA_FILE, index=False)
-                        st.success(f"{patient_id}さんを在室中に戻しました。")
-                        st.rerun()
+                    col1, col2 = st.columns([4, 1])
+                    with col1:
+                        st.write(f"**患者ID:** {patient_id}")
+                    with col2:
+                      if st.button("在室中に戻す", key=f"reactivate_{patient_id}", use_container_width=True):
+                            st.session_state.df.loc[st.session_state.df['アプリ用患者ID'] == patient_id, 'ステータス'] = '在室中'
+                            st.session_state.df.to_csv(DATA_FILE, index=False)
+                            st.success(f"{patient_id}さんを在室中に戻しました。")
+                            st.rerun()
 
 if __name__ == "__main__":
     run_app()
