@@ -164,6 +164,11 @@ def run_app():
                     st.subheader("データ入力・修正")
                     st.write(f"**対象患者:** {patient_id_to_use}")
                     record_date = st.date_input("日付", datetime.date.today())
+                    # ★★★ ここから入力規則の強化 ★★★
+                    if record_date > datetime.date.today():
+                        st.error("未来の日付は入力できません。")
+                        st.stop() # ここで処理を停止し、以下の入力欄を表示しない
+                    # ★★★ ここまで追加 ★★★
                     time_of_day = st.selectbox("時間帯", options=["朝", "夕"])
                     default_values = {name: 10 for name in FACTOR_SCORE_NAMES}
                     default_values["総合スコア"] = 10
@@ -215,6 +220,29 @@ def run_app():
                     default_event_list = [e.strip() for e in default_event_text.split(',')] if default_event_text and isinstance(default_event_text, str) else []
                     selected_events = st.multiselect("主要イベントを選択（複数可）", options=major_event_options, default=default_event_list)
                     event_text = ", ".join(selected_events)
+                    # ★★★ ここからスコア変動の警告機能を追加 ★★★
+                    # 比較対象となる前回の総合スコアを取得
+                    previous_total_score = None
+                    # default_valuesには直前のデータが格納されている
+                    if not existing_data.empty:
+                    # 修正モードの場合、修正対象よりさらに前のデータを取得する必要がある
+                        patient_df_copy = patient_df.copy()
+                        patient_df_copy['日付'] = pd.to_datetime(patient_df_copy['日付'])
+                        patient_df_copy['プロット用日時'] = patient_df_copy.apply(lambda row: row['日付'].replace(hour=8 if row['時間帯'] == '朝' else 20), axis=1)
+                        current_selection_dt = pd.to_datetime(str(record_date)).replace(hour=8 if time_of_day == '朝' else 20)
+                        previous_records = patient_df_copy[patient_df_copy['プロット用日時'] < current_selection_dt]
+                        if not previous_records.empty:
+                            previous_total_score = previous_records.sort_values(by='プロット用日時').iloc[-1]['総合スコア']
+                    else:
+                    # 新規入力モードの場合
+                        previous_total_score = default_values.get("総合スコア")
+
+                    # スコアの変動をチェックして警告を表示
+                    if previous_total_score is not None and pd.notna(previous_total_score):
+                        if abs(total_score - previous_total_score) >= 41:
+                            st.warning(f"注意：スコアが前回({int(previous_total_score)}点)から41点以上変動しています。内容を確認してください。")
+                    # ★★★ ここまで追加 ★★★
+
                     if st.button("記録・修正する"):
                         new_data_dict = {"アプリ用患者ID": patient_id_to_use, "日付": str(record_date), "時間帯": time_of_day, "総合スコア": total_score, "イベント": event_text, "ステータス": "在室中", "疾患群": disease_group, "要因タグ": ""}
                         new_data_dict.update(factor_scores)
@@ -387,7 +415,7 @@ def run_app():
                             st.success(f"{patient_id}さんを在室中に戻しました。")
                             st.rerun()
                     
-    # ★★★ ここから統計ダッシュボード機能を追加 ★★★
+    # ★★★ ここから統計ダッシュボード機能 ★★★
             st.write("---")
             st.header("統計ダッシュボード")
 
@@ -395,13 +423,11 @@ def run_app():
             archived_df = st.session_state.df[st.session_state.df['ステータス'] == '退室済'].copy()
     # ダッシュボードで使う「経過日数」や「フェーズ」を計算する
             archived_df = calculate_derived_columns(archived_df)
-    # ★★★ ここから修正 ★★★
     # 夕方のデータを0.5日ずらすための列を追加
             archived_df['プロット用経過日数'] = archived_df.apply(
                 lambda row: row['経過日数'] + 0.5 if row['時間帯'] == '夕' else row['経過日数'],
                 axis=1
             )
-    # ★★★ ここまで修正 ★★★
             if archived_df.empty:
                 st.info("分析対象となる、アーカイブされた患者データがまだありません。")
             else:
