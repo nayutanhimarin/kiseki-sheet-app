@@ -10,16 +10,9 @@ import numpy as np
 
 # --- 定数と設定 ---
 DATA_FILE_PREFIX = "patient_data_"
-MASTER_ID = "master_admin"
-MASTER_PASSWORD = "master_password_123"
-PASSWORDS = {
-    "hospital_a": "pass123",
-    "test": "test123",
-    "hospital_b": "Kiseki-sheet"
-}
+
 DISEASE_OPTIONS = ["敗血症性ショック", "心原性ショック", "心臓・大血管術後", "その他（自由記載）"]
 PHASE_LABELS = ["超急性期", "維持期", "回復期", "転棟期"]
-# ★★★ 要望3を反映 ★★★
 PHASE_COLORS = {
     "超急性期": "#ffc0cb", # Pink
     "維持期": "#ffe4c4",   # Bisque
@@ -128,7 +121,6 @@ def create_score_input(label, default_value, key_prefix):
     return number_val
 
 def run_app():
-    # ★★★ 要望5を反映 ★★★
     st.set_page_config(layout="wide")
     st.markdown("""
         <style>
@@ -159,13 +151,32 @@ def run_app():
         facility_id_input = st.text_input("施設ID")
         password = st.text_input("パスワード", type="password")
         if st.button("ログイン"):
-            if facility_id_input == MASTER_ID and password == MASTER_PASSWORD:
-                st.session_state.logged_in, st.session_state.facility_id = True, MASTER_ID
-                st.rerun()
-            elif facility_id_input in PASSWORDS and PASSWORDS[facility_id_input] == password:
-                st.session_state.logged_in, st.session_state.facility_id = True, facility_id_input
-                st.rerun()
-            else: st.error("施設IDまたはパスワードが間違っています。")
+            # ★★★ ここからログイン処理を変更 ★★★
+            try:
+                # マスター管理者でのログインを試みる
+                master_id_secret = st.secrets["master_credentials"]["id"]
+                master_pw_secret = st.secrets["master_credentials"]["password"]
+                
+                # 通常施設のパスワード辞書を取得
+                passwords_secret = st.secrets["passwords"]
+
+                if facility_id_input == master_id_secret and password == master_pw_secret:
+                    st.session_state.logged_in = True
+                    st.session_state.facility_id = master_id_secret
+                    st.rerun()
+                
+                # 通常ユーザーでのログインを試みる
+                elif facility_id_input in passwords_secret and password == passwords_secret[facility_id_input]:
+                    st.session_state.logged_in = True
+                    st.session_state.facility_id = facility_id_input
+                    st.rerun()
+                
+                else:
+                    st.error("施設IDまたはパスワードが間違っています。")
+
+            except Exception as e:
+                st.error(f"認証中にエラーが発生しました。Secretsが正しく設定されているか確認してください。: {e}")
+           # ★★★ ここまでログイン処理を変更 ★★★
     else:
         facility_id = st.session_state.facility_id
         patient_id_to_use = None
@@ -173,7 +184,7 @@ def run_app():
         with st.sidebar:
             st.header(f"施設ID: {facility_id}")
             
-            if facility_id != MASTER_ID:
+            if facility_id != st.secrets.get("master_credentials", {}).get("id", "master_admin_fallback"):
                 DATA_FILE = f"patient_data_{facility_id}.csv"
                 if 'df' not in st.session_state or st.session_state.get('current_facility') != facility_id:
                     st.session_state.df = load_data(DATA_FILE)
@@ -302,7 +313,7 @@ def run_app():
                 st.rerun()
 
         # --- メイン画面 ---
-        if facility_id == MASTER_ID:
+        if facility_id == st.secrets.get("master_credentials", {}).get("id", "master_admin_fallback"):
             st.header("マスター管理者モード")
             with st.sidebar:
                 st.subheader("全施設のデータ管理")
