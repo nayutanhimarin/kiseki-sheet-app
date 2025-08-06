@@ -2,6 +2,6 @@ Anacondaの操作→Gidにコード反映
 ・conda activate kiseki_app
 ・cd /d G:\マイドライブ\ICU\VSC
 ・git add .
-・git commit -m"統計ダッシュボード軌跡実装"
+・git commit -m"回復速度の可視化実装"
 ・git push
 

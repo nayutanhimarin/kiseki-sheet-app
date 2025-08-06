@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import japanize_matplotlib
 import numpy as np
-
+import seaborn as sns
 # --- 定数と設定 ---
 DATA_FILE_PREFIX = "patient_data_"
 DISEASE_OPTIONS = ["敗血症性ショック", "心原性ショック", "心臓・大血管術後", "その他（自由記載）"]
@@ -99,7 +99,7 @@ def create_radar_chart(labels, current_data, previous_data=None, current_label='
     ax.fill(angles, curr_values, color=current_color, alpha=0.25, zorder=9)
     ax.set_yticklabels([])
     ax.set_xticks(angles[:-1])
-    ax.set_xticklabels(labels, fontsize=12)
+    ax.set_xticklabels(labels, fontsize=16)
     ax.set_rlim(0, 100)
     ax.legend(loc='upper right', bbox_to_anchor=(1.3, 1.1))
     return fig
@@ -443,8 +443,8 @@ def run_app():
                             mean_trajectory = group_df.groupby('プロット用経過日数')['総合スコア'].mean().reset_index()
                             ax.plot(mean_trajectory['プロット用経過日数'], mean_trajectory['総合スコア'], marker='o', linestyle='-', linewidth=3, color='red', label=f'{selected_disease_group} 平均')
                             ax.set_title(f"【{selected_disease_group}】治療軌跡の重ね合わせ", fontsize=16)
-                            ax.set_xlabel("ICU入室後経過日数", fontsize=12)
-                            ax.set_ylabel("総合スコア", fontsize=12)
+                            ax.set_xlabel("ICU入室後経過日数", fontsize=16)
+                            ax.set_ylabel("総合スコア", fontsize=16)
                             ax.set_ylim(0, 105)
                             ax.grid(True, linestyle='--', alpha=0.6)
                             ax.legend()
@@ -472,8 +472,8 @@ def run_app():
 
                                 ax_speed.axhline(0, color='grey', linewidth=0.8)
                                 ax_speed.set_title(f"【{selected_disease_group}】回復速度", fontsize=16)
-                                ax_speed.set_xlabel("ICU入室後経過日数", fontsize=12)
-                                ax_speed.set_ylabel("前日からの平均スコア変化量", fontsize=12)
+                                ax_speed.set_xlabel("ICU入室後経過日数", fontsize=16)
+                                ax_speed.set_ylabel("前日からの平均スコア変化量", fontsize=16)
                                 ax_speed.grid(True, axis='y', linestyle='--', alpha=0.6)
 
                                 st.pyplot(fig_speed)
@@ -482,8 +482,96 @@ def run_app():
                         st.info("分析対象の疾患群がデータにありません。")
     
                     with tab2:
-                        st.subheader("アウトカムと滞在期間の分析")
-                        st.write("ここに「各フェーズ滞在日数」のグラフと「重要指標サマリー」の表が入ります。")
+                       # ★★★ ここから修正 ★★★
+                        st.subheader("各フェーズの滞在日数の分布")
+
+                        # 各患者が各フェーズに何勤務帯（0.5日）いたかを計算
+                        # ★★★ FutureWarningに対応 ★★★
+                        days_in_phase = archived_df.groupby(['アプリ用患者ID', '疾患群', 'フェーズ'], observed=False).size().reset_index(name='勤務帯の数')                        # 勤務帯の数を日数に変換
+                        days_in_phase['日数'] = days_in_phase['勤務帯の数'] / 2.0
+
+                        fig, ax = plt.subplots(figsize=(12, 7))
+
+                        # seabornを使って箱ひげ図を描画
+                        sns.boxplot(data=days_in_phase, x='疾患群', y='日数', hue='フェーズ', ax=ax)
+
+                        ax.set_title("疾患群ごとのフェーズ別滞在日数", fontsize=16)
+                        ax.set_xlabel("疾患群", fontsize=16)
+                        ax.set_ylabel("滞在日数", fontsize=16)
+                        plt.xticks(rotation=30, ha='right')
+
+                        st.pyplot(fig)
+                        # ★★★ ここから重要指標サマリーの表を追加 ★★★
+                        st.write("---")
+                        st.subheader("重要指標サマリー")
+
+                        # ★★★ ここからロジックを全面的に修正 ★★★
+                        # --- 計算ロジック ---
+                        # 1. 患者数
+                        patient_counts = archived_df.groupby('疾患群')['アプリ用患者ID'].nunique()
+
+                        # 2. ICU総滞在日数
+                        los_per_patient = archived_df.groupby('アプリ用患者ID')['経過日数'].max()
+                        patient_to_group = archived_df.drop_duplicates(subset='アプリ用患者ID').set_index('アプリ用患者ID')['疾患群']
+                        los_df = pd.DataFrame({'ICU滞在日数': los_per_patient, '疾患群': patient_to_group})
+                        grouped_los = los_df.groupby('疾患群')['ICU滞在日数']
+                        median_los = grouped_los.median()
+                        q1_los = grouped_los.quantile(0.25)
+                        q3_los = grouped_los.quantile(0.75)
+
+                        # 3. マイルストーン指標の計算
+                        milestone_events = ["抜管", "SBT成功", "昇圧薬離脱", "補助循環離脱", "腎代替療法終了"]
+                        milestone_results = {}
+                        for event in milestone_events:
+                            event_df = archived_df[archived_df['イベント'].str.contains(event, na=False)]
+                            days_to_event = event_df.groupby('アプリ用患者ID')['経過日数'].min()
+                            event_days_df = pd.merge(days_to_event, patient_to_group, on='アプリ用患者ID')
+                            grouped_event_days = event_days_df.groupby('疾患群')['経過日数']
+                            milestone_results[event] = {
+                                "median": grouped_event_days.median(), "q1": grouped_event_days.quantile(0.25), "q3": grouped_event_days.quantile(0.75)
+                            }
+
+                        # 4. 合併症指標の計算
+                        complication_events = ["再挿管", "気管切開", "新規不整脈", "出血イベント", "せん妄", "新規感染症"]
+                        complication_results = {}
+                        for event in complication_events:
+                            patients_with_event = archived_df[archived_df['イベント'].str.contains(event, na=False)]['アプリ用患者ID'].unique()
+                            # FutureWarningに対応するため、include_groups=False を追加
+                            complication_rates = patient_to_group.to_frame().groupby('疾患群').apply(lambda g: pd.Series({
+                                'count': len([pid for pid in patients_with_event if pid in g.index]),
+                                'total': len(g),
+                                'rate': len([pid for pid in patients_with_event if pid in g.index]) / len(g) * 100 if len(g) > 0 else 0
+                            }), include_groups=False)
+                            complication_results[event] = complication_rates
+
+                        # --- 表示用のDataFrameを作成 ---
+                        # エラー解決のため、最初に列と行をすべて定義する
+                        disease_groups = archived_df['疾患群'].dropna().unique()
+                        index_names = ["患者数 (人)", "ICU総滞在日数 (中央値 [IQR])"] + \
+                                      [f"{e}までの日数 (中央値 [IQR])" for e in milestone_events] + \
+                                      [f"{e} 経験率 (%)" for e in complication_events]
+                        summary_df = pd.DataFrame(index=index_names, columns=disease_groups)
+
+                        # DataFrameに値を埋める
+                        for group in disease_groups:
+                            summary_df.loc["患者数 (人)", group] = f"{patient_counts.get(group, 0)}"
+                            los_text = f"{median_los.get(group, 0):.1f} [{q1_los.get(group, 0):.1f} - {q3_los.get(group, 0):.1f}]"
+                            summary_df.loc["ICU総滞在日数 (中央値 [IQR])", group] = los_text
+
+                            for event in milestone_events:
+                                median = milestone_results[event]['median'].get(group)
+                                if pd.notna(median):
+                                    q1 = milestone_results[event]['q1'].get(group)
+                                    q3 = milestone_results[event]['q3'].get(group)
+                                    summary_df.loc[f"{event}までの日数 (中央値 [IQR])", group] = f"{median:.1f} [{q1:.1f} - {q3:.1f}]"
+
+                            for event in complication_events:
+                                rate_info = complication_results[event].get(group)
+                                if rate_info is not None:
+                                    summary_df.loc[f"{event} 経験率 (%)", group] = f"{rate_info['rate']:.1f} ({int(rate_info['count'])}/{int(rate_info['total'])})"
+
+                        st.dataframe(summary_df.fillna("-"))
+                # ★★★ ここまで全面的に修正 ★★★
     
 if __name__ == "__main__":
     run_app()
