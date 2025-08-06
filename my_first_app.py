@@ -32,7 +32,7 @@ ALL_COLUMN_NAMES = ["アプリ用患者ID", "日付", "時間帯", "総合スコ
 # ★★★ イベントフラグの定義 ★★★
 EVENT_FLAGS = {
     # イベント名: { カテゴリ, 色, マーカー }
-    "入室":      {"category": "#その他", "color": "black", "marker": "s"},
+    "入室":      {"category": "#その他", "color": "red", "marker": "s"},
     "再手術":    {"category": "#その他", "color": "darkred", "marker": "X"},
     "転棟":      {"category": "#その他", "color": "blue", "marker": "s"},
     "抜管":      {"category": "#呼吸", "color": "green", "marker": "^"},
