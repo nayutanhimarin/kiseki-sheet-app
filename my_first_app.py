@@ -68,6 +68,13 @@ def calculate_derived_columns(df):
         df_copy = df_copy.drop(columns=['入室日'])
     except Exception:
         df_copy['経過日数'] = None
+
+    # ★★★ プロット用の日時列をここで作成するように追加 ★★★
+    df_copy['プロット用日時'] = df_copy.apply(
+        lambda row: row['日付'].replace(hour=8 if row['時間帯'] == '朝' else 20),
+        axis=1
+    )
+
     return df_copy
 #レーダーチャート
 def create_radar_chart(labels, current_data, previous_data=None, current_label='最新', previous_label='前回', current_color='blue', previous_color='red', current_style='-', previous_style='--'):
@@ -386,7 +393,15 @@ def run_app():
 
     # 分析対象は「退室済」の患者データ
             archived_df = st.session_state.df[st.session_state.df['ステータス'] == '退室済'].copy()
-
+    # ダッシュボードで使う「経過日数」や「フェーズ」を計算する
+            archived_df = calculate_derived_columns(archived_df)
+    # ★★★ ここから修正 ★★★
+    # 夕方のデータを0.5日ずらすための列を追加
+            archived_df['プロット用経過日数'] = archived_df.apply(
+                lambda row: row['経過日数'] + 0.5 if row['時間帯'] == '夕' else row['経過日数'],
+                axis=1
+            )
+    # ★★★ ここまで修正 ★★★
             if archived_df.empty:
                 st.info("分析対象となる、アーカイブされた患者データがまだありません。")
             else:
@@ -395,9 +410,49 @@ def run_app():
 
                     tab1, tab2 = st.tabs(["軌跡の比較", "数値サマリー"])
 
-                    with tab1:
-                        st.subheader("治療軌跡の全体像")
-                        st.write("ここに「軌跡の重ね合わせプロット」と「回復速度の可視化」グラフが入ります。")
+                with tab1:
+                # ★★★ ここから修正 ★★★
+                    st.subheader("治療軌跡の重ね合わせプロット")
+
+                # 分析対象の疾患群をユニークなリストとして取得
+                    disease_groups = archived_df['疾患群'].dropna().unique()
+
+                    if len(disease_groups) > 0:
+                        selected_disease_group = st.selectbox(
+                        "分析したい疾患群を選択してください",
+                            options=disease_groups
+                        )
+
+                        if selected_disease_group:
+                        # 選択された疾患群のデータのみを抽出
+                            group_df = archived_df[archived_df['疾患群'] == selected_disease_group]
+                            patient_ids = group_df['アプリ用患者ID'].unique()
+
+                            fig, ax = plt.subplots(figsize=(10, 6))
+
+                        # 各患者の軌跡を半透明でプロット
+                        for patient_id in patient_ids:
+                            patient_df = group_df[group_df['アプリ用患者ID'] == patient_id]
+                            patient_df = patient_df.sort_values(by='プロット用日時')
+                            # ★★★ X軸を新しい列に変更 ★★★
+                            ax.plot(patient_df['プロット用経過日数'], pd.to_numeric(patient_df['総合スコア'], errors='coerce'), marker='o', linestyle='-', alpha=0.3, label='_nolegend_')
+
+                        # 平均軌跡を計算してプロット
+                        if not group_df.empty:
+                            # ★★★ groupbyとX軸も新しい列に変更 ★★★
+                            mean_trajectory = group_df.groupby('プロット用経過日数')['総合スコア'].mean().reset_index()
+                            ax.plot(mean_trajectory['プロット用経過日数'], mean_trajectory['総合スコア'], marker='o', linestyle='-', linewidth=3, color='red', label=f'{selected_disease_group} 平均')
+                            ax.set_title(f"【{selected_disease_group}】治療軌跡の重ね合わせ", fontsize=16)
+                            ax.set_xlabel("ICU入室後経過日数", fontsize=12)
+                            ax.set_ylabel("総合スコア", fontsize=12)
+                            ax.set_ylim(0, 105)
+                            ax.grid(True, linestyle='--', alpha=0.6)
+                            ax.legend()
+
+                            st.pyplot(fig)
+                    else:
+                        st.info("分析対象の疾患群がデータにありません。")
+                # ★★★ ここまで修正 ★★★
 
                     with tab2:
                         st.subheader("アウトカムと滞在期間の分析")
