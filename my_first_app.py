@@ -450,13 +450,40 @@ def run_app():
                             ax.legend()
 
                             st.pyplot(fig)
+                            # ★★★ ここから回復速度の可視化機能を追加 ★★★
+                            st.write("---")
+                            st.subheader("回復速度の可視化（日次スコア変化の平均）")
+
+                            all_changes = []
+                            for patient_id in patient_ids:
+                                patient_df = group_df[group_df['アプリ用患者ID'] == patient_id].copy()
+                                patient_df = patient_df.sort_values(by='プロット用日時')
+
+                            # .diff()で1つ前の記録との差分を計算
+                                patient_df['スコア変化量'] = pd.to_numeric(patient_df['総合スコア'], errors='coerce').diff()
+                                all_changes.append(patient_df[['経過日数', 'スコア変化量']])
+
+                            if all_changes:
+                                all_changes_df = pd.concat(all_changes)
+                                average_speed = all_changes_df.groupby('経過日数')['スコア変化量'].mean()
+
+                                fig_speed, ax_speed = plt.subplots(figsize=(10, 5))
+                                average_speed.plot(kind='bar', ax=ax_speed, color=['skyblue' if x >= 0 else 'salmon' for x in average_speed.values])
+
+                                ax_speed.axhline(0, color='grey', linewidth=0.8)
+                                ax_speed.set_title(f"【{selected_disease_group}】回復速度", fontsize=16)
+                                ax_speed.set_xlabel("ICU入室後経過日数", fontsize=12)
+                                ax_speed.set_ylabel("前日からの平均スコア変化量", fontsize=12)
+                                ax_speed.grid(True, axis='y', linestyle='--', alpha=0.6)
+
+                                st.pyplot(fig_speed)
+                                # ★★★ ここまで追加 ★★★
                     else:
                         st.info("分析対象の疾患群がデータにありません。")
-                # ★★★ ここまで修正 ★★★
-
+    
                     with tab2:
                         st.subheader("アウトカムと滞在期間の分析")
                         st.write("ここに「各フェーズ滞在日数」のグラフと「重要指標サマリー」の表が入ります。")
-    # ★★★ ここまで追加 ★★★
+    
 if __name__ == "__main__":
     run_app()
