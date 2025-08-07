@@ -5,9 +5,17 @@ import os
 import glob
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
-import japanize_matplotlib
 import numpy as np
 import seaborn as sns
+import matplotlib.font_manager as fm 
+
+# アプリと同じディレクトリにあるフォントファイルへのパス
+font_path = 'ipaexg.ttf'
+# Streamlit Cloud上でフォントを認識させるための設定
+if os.path.exists(font_path):
+    prop = fm.FontProperties(fname=font_path)
+    plt.rcParams['font.family'] = prop.get_name()
+
 # --- 定数と設定 ---
 DATA_FILE_PREFIX = "patient_data_"
 DISEASE_OPTIONS = ["敗血症性ショック", "心原性ショック", "心臓・大血管術後", "その他（自由記載）"]

@@ -2,6 +2,6 @@ Anacondaの操作→Gidにコード反映
 ・conda activate kiseki_app
 ・cd /d G:\マイドライブ\ICU\VSC
 ・git add .
-・git commit -m"統計ダッシュボードのイベントサマリ表実装"
+・git commit -m"未来防止実装"
 ・git push
 
