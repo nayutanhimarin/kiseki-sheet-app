@@ -384,8 +384,7 @@ def run_app():
                             flag = EVENT_FLAGS.get(first_event)
                             if flag:
                                 ax.scatter(plot_time, plot_score, color=flag['color'], marker=flag['marker'], s=200, zorder=12)
-                                ax.annotate(event_string, (plot_time, plot_score), xytext=(0, 15), textcoords='offset points', ha='center', va='bottom', bbox=dict(boxstyle='round,pad=0.2', fc=flag['color'], alpha=0.7))
-                        ax.xaxis.set_major_locator(mdates.DayLocator(interval=1))
+                                ax.annotate(event_string, (plot_time, plot_score), xytext=(0, 15), textcoords='offset points', ha='center', va='bottom', bbox=dict(boxstyle='round,pad=0.2', fc=flag['color'], alpha=0.7), fontproperties=prop)
                         ax.xaxis.set_major_formatter(mdates.DateFormatter('%m/%d'))
                         fig.autofmt_xdate(rotation=30)
                         ax.set_ylim(-5, 105)
@@ -528,6 +527,23 @@ def run_app():
                         )
 
                         if selected_disease_group:
+                                                    # ★★★ ここから修正 ★★★
+                        # 在室中の患者データも準備
+                            active_df = st.session_state.df[st.session_state.df['ステータス'] == '在室中'].copy()
+                            active_df = calculate_derived_columns(active_df)
+                            active_df['プロット用経過日数'] = active_df.apply(
+                            lambda row: row['経過日数'] + 0.5 if row['時間帯'] == '夕' else row['経過日数'],
+                                axis=1
+                            )
+
+                        # 選択された疾患群に属する在室中患者のリストを作成
+                            active_patients_in_group = active_df[active_df['疾患群'] == selected_disease_group]['アプリ用患者ID'].unique()
+
+                            selected_active_patient = st.selectbox(
+                            "比較したい治療中の患者を選択（任意）",
+                                options=["比較しない"] + list(active_patients_in_group)
+                            )
+                        # ★★★ ここまで修正 ★★★
                         # 選択された疾患群のデータのみを抽出
                             group_df = archived_df[archived_df['疾患群'] == selected_disease_group]
                             patient_ids = group_df['アプリ用患者ID'].unique()
@@ -535,17 +551,25 @@ def run_app():
                             fig, ax = plt.subplots(figsize=(10, 6))
 
                         # 各患者の軌跡を半透明でプロット
-                        for patient_id in patient_ids:
-                            patient_df = group_df[group_df['アプリ用患者ID'] == patient_id]
-                            patient_df = patient_df.sort_values(by='プロット用日時')
+                            for patient_id in patient_ids:
+                                patient_df = group_df[group_df['アプリ用患者ID'] == patient_id]
+                                patient_df = patient_df.sort_values(by='プロット用日時')
                             # ★★★ X軸を新しい列に変更 ★★★
-                            ax.plot(patient_df['プロット用経過日数'], pd.to_numeric(patient_df['総合スコア'], errors='coerce'), marker='o', linestyle='-', alpha=0.3, label='_nolegend_')
+                                ax.plot(patient_df['プロット用経過日数'], pd.to_numeric(patient_df['総合スコア'], errors='coerce'), marker='o', linestyle='-', alpha=0.3, label='_nolegend_')
 
                         # 平均軌跡を計算してプロット
-                        if not group_df.empty:
+                            if not group_df.empty:
                             # ★★★ groupbyとX軸も新しい列に変更 ★★★
-                            mean_trajectory = group_df.groupby('プロット用経過日数')['総合スコア'].mean().reset_index()
-                            ax.plot(mean_trajectory['プロット用経過日数'], mean_trajectory['総合スコア'], marker='o', linestyle='-', linewidth=3, color='red', label=f'{selected_disease_group} 平均')
+                                mean_trajectory = group_df.groupby('プロット用経過日数')['総合スコア'].mean().reset_index()
+                                ax.plot(mean_trajectory['プロット用経過日数'], mean_trajectory['総合スコア'], marker='o', linestyle='-', linewidth=3, color='red', label=f'{selected_disease_group} 平均')
+                        # ★★★ ここから修正 ★★★
+                        # 選択された在室中患者の軌跡を重ねてプロット
+                            if selected_active_patient != "比較しない":
+                                current_patient_df = active_df[active_df['アプリ用患者ID'] == selected_active_patient]
+                                current_patient_df = current_patient_df.sort_values(by='プロット用日時')
+                                ax.plot(current_patient_df['プロット用経過日数'], pd.to_numeric(current_patient_df['総合スコア'], errors='coerce'), 
+                                        marker='o', linestyle='-', linewidth=3, color='springgreen', label=f'治療中: {selected_active_patient}', zorder=15)
+                        # ★★★ ここまで修正 ★★★
                         # ★★★ ここからフォント設定を修正 ★★★
                             if prop:
                                 ax.set_title(f"【{selected_disease_group}】治療軌跡の重ね合わせ", fontsize=16, fontproperties=prop)
