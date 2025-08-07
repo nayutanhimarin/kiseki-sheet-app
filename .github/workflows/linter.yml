@@ -1,0 +1,35 @@
+# ★★★ Pythonコードの自動チェック設定 ★★★
+name: Python Linter
+
+# masterブランチにpushされた時に、この自動化を実行する
+on:
+  push:
+    branches: [ master, main ]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      # 1. GitHubリポジトリのコードを仮想環境にコピーする
+      - name: Check out repository code
+        uses: actions/checkout@v4
+
+      # 2. Python環境をセットアップする
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # 3. コードチェッカー(flake8)をインストールする
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install flake8
+
+      # 4. flake8を実行して、基本的な文法エラーや未使用の変数などをチェックする
+      - name: Lint with flake8
+        run: |
+          # --count: エラー数を表示
+          # --select=E9,F63,F7,F82: 致命的なエラーのみをチェック
+          # --show-source: 問題のコード行を表示
+          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
