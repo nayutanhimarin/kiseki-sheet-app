@@ -463,6 +463,32 @@ def run_app():
                             st.session_state.df.to_csv(DATA_FILE, index=False)
                             st.success(f"{patient_id}さんを在室中に戻しました。")
                             st.rerun()
+
+        # ★★★ ここからダウンロード機能を追加 ★★★
+        st.write("---")
+        st.subheader("データのエクスポート")
+
+        # 1. 患者データのダウンロード
+        # st.session_state.dfをCSV形式のバイナリデータに変換（Excelでの文字化け防止にutf-8-sigを指定）
+        csv_patient_data = st.session_state.df.to_csv(index=False).encode('utf-8-sig')
+        st.download_button(
+            label="患者データをCSVでダウンロード",
+            data=csv_patient_data,
+            file_name=f"patient_data_{facility_id}_{datetime.date.today()}.csv",
+            mime='text/csv',
+        )
+
+        # 2. 操作ログのダウンロード
+        LOG_FILE = f"{LOG_FILE_PREFIX}{facility_id}.csv"
+        if os.path.exists(LOG_FILE):
+            with open(LOG_FILE, "rb") as file:
+                st.download_button(
+                    label="操作ログをCSVでダウンロード",
+                    data=file,
+                    file_name=f"log_data_{facility_id}_{datetime.date.today()}.csv",
+                    mime='text/csv',
+                )
+        # ★★★ ここまで追加 ★★★
                     
     # ★★★ ここから統計ダッシュボード機能 ★★★
             st.write("---")
