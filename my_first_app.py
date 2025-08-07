@@ -200,6 +200,13 @@ def run_app():
                         st.session_state.df.to_csv(DATA_FILE, index=False); LOG_FILE = f"{LOG_FILE_PREFIX}{facility_id}.csv"; write_log(LOG_FILE, facility_id, patient_id_to_use, "データ記録/修正")
                         st.success("データを記録しました！"); st.rerun()
             st.write("---")
+        # ★★★ AIレビューテスト用のコード ★★★
+        # わざと少し冗長な書き方をしています
+        if patient_id_to_use is not None:
+            if len(patient_id_to_use) > 0:
+                st.sidebar.markdown(f"**現在選択中の患者:** {patient_id_to_use}")
+        # ★★★ ここまで ★★★
+
             if st.button("ログアウト"):
                 for key in list(st.session_state.keys()): del st.session_state[key]
                 st.rerun()
