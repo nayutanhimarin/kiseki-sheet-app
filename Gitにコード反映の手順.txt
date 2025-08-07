@@ -5,3 +5,5 @@ Anacondaの操作→Gidにコード反映
 ・git commit -m"バグ修正”
 ・git push
 
+・git branch　#ブランチを確認#
+
