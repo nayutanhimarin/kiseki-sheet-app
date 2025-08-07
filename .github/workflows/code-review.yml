@@ -19,7 +19,7 @@ jobs:
           fetch-depth: 0
 
       - name: Gemini AI Code Review
-        uses: google/gemini-codereview-action@v1
+        uses: google/gemini-code-review-action@v1
         with:
           model: "gemini-1.5-flash"
           github_token: ${{ secrets.GITHUB_TOKEN }}
