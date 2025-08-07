@@ -9,15 +9,16 @@ import numpy as np
 import seaborn as sns
 import matplotlib.font_manager as fm 
 
+# ★★★ ここから修正 ★★★
 # アプリと同じディレクトリにあるフォントファイルへのパス
 font_path = 'ipaexg.ttf'
-# Streamlit Cloud上でフォントを認識させるための設定
-if os.path.exists(font_path):
-    prop = fm.FontProperties(fname=font_path)
-    plt.rcParams['font.family'] = prop.get_name()
+# フォントプロパティをグローバル変数として定義
+prop = fm.FontProperties(fname=font_path) if os.path.exists(font_path) else None
+# ★★★ ここまで修正 ★★★
 
 # --- 定数と設定 ---
 DATA_FILE_PREFIX = "patient_data_"
+LOG_FILE_PREFIX = "log_data_" # ★★★ この行を追加 ★★★
 DISEASE_OPTIONS = ["敗血症性ショック", "心原性ショック", "心臓・大血管術後", "その他（自由記載）"]
 PHASE_LABELS = ["超急性期", "維持期", "回復期", "転棟期"]
 PHASE_COLORS = {
@@ -107,7 +108,14 @@ def create_radar_chart(labels, current_data, previous_data=None, current_label='
     ax.fill(angles, curr_values, color=current_color, alpha=0.25, zorder=9)
     ax.set_yticklabels([])
     ax.set_xticks(angles[:-1])
-    ax.set_xticklabels(labels, fontsize=16)
+    # ★★★ ここから修正 ★★★
+    if prop: # フォントが利用可能な場合のみ適用
+        ax.set_xticklabels(labels, fontsize=12, fontproperties=prop)
+        ax.legend(loc='upper right', bbox_to_anchor=(1.3, 1.1), prop=prop)
+    else: # フォントがない場合はデフォルトで表示
+        ax.set_xticklabels(labels, fontsize=12)
+        ax.legend(loc='upper right', bbox_to_anchor=(1.3, 1.1))
+# ★★★ ここまで修正 ★★★
     ax.set_rlim(0, 100)
     ax.legend(loc='upper right', bbox_to_anchor=(1.3, 1.1))
     return fig
@@ -116,7 +124,24 @@ def create_score_input(label, default_value, key_prefix):
     slider_val = st.slider(f"{label} (大まか)", 0, 100, int(default_value), step=5, key=f"{key_prefix}_slider")
     number_val = st.number_input(f"{label} (細かく)", 0, 100, slider_val, step=1, key=f"{key_prefix}_number")
     return number_val
+# ★★★ 機能B：ここから新しい関数を追加 ★★★
+def write_log(log_file, facility_id, patient_id, action):
+    """操作ログを記録する関数"""
+    now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    log_entry = {
+        "timestamp": [now],
+        "facility_id": [facility_id],
+        "patient_id": [patient_id],
+        "action": [action]
+    }
+    log_df = pd.DataFrame(log_entry)
 
+    # ログファイルが存在しない場合はヘッダー付きで新規作成、存在する場合は追記
+    if not os.path.exists(log_file):
+        log_df.to_csv(log_file, index=False, encoding='utf-8-sig')
+    else:
+        log_df.to_csv(log_file, mode='a', header=False, index=False, encoding='utf-8-sig')
+# ★★★ 機能B：ここまで新しい関数を追加 ★★★
 def run_app():
     st.set_page_config(layout="wide")
     st.markdown("""
@@ -257,6 +282,10 @@ def run_app():
                         st.session_state.df = pd.concat([st.session_state.df, pd.DataFrame([new_data_dict])], ignore_index=True)
                         st.session_state.df = st.session_state.df.drop_duplicates(subset=['アプリ用患者ID', '日付', '時間帯'], keep='last').sort_values(by=["アプリ用患者ID", "日付", "時間帯"])
                         st.session_state.df.to_csv(DATA_FILE, index=False)
+                        # ★★★ 機能C：ここにログ書き込み処理を追加 ★★★
+                        LOG_FILE = f"{LOG_FILE_PREFIX}{facility_id}.csv"
+                        write_log(LOG_FILE, facility_id, patient_id_to_use, "データ記録/修正")
+
                         st.success("データを記録しました！")
                         st.rerun()
             st.write("---")
@@ -360,20 +389,32 @@ def run_app():
                         ax.xaxis.set_major_formatter(mdates.DateFormatter('%m/%d'))
                         fig.autofmt_xdate(rotation=30)
                         ax.set_ylim(-5, 105)
-                        ax.set_title("治療フェーズの軌跡", fontsize=20, pad=20)
-                        ax.set_ylabel("総合スコア", fontsize=16)
-                        ax.set_xlabel("日付", fontsize=16)
-                        ax.tick_params(axis='both', which='major', labelsize=14)
                         ax.grid(True, axis='y', linestyle='--', alpha=0.6)
-                        bbox_style = dict(boxstyle='round,pad=0.4', fc='white', ec='none', alpha=0.85)
-                        ax.axhspan(0, 20, color=PHASE_COLORS["超急性期"], alpha=0.3)
-                        ax.axhspan(20, 60, color=PHASE_COLORS["維持期"], alpha=0.3)
-                        ax.axhspan(60, 80, color=PHASE_COLORS["回復期"], alpha=0.3)
-                        ax.axhspan(80, 100, color=PHASE_COLORS["転棟期"], alpha=0.3)
-                        ax.text(0.02, 0.1, "超急性期", fontsize=18, transform=ax.transAxes, bbox=bbox_style)
-                        ax.text(0.02, 0.4, "維持期", fontsize=18, transform=ax.transAxes, bbox=bbox_style)
-                        ax.text(0.02, 0.7, "回復期", fontsize=18, transform=ax.transAxes, bbox=bbox_style)
-                        ax.text(0.02, 0.9, "転棟期", fontsize=18, transform=ax.transAxes, bbox=bbox_style)
+
+                        # ★★★ ここから修正 ★★★
+                        if prop: # フォントが利用可能な場合のみ適用
+                            ax.set_title("治療フェーズの軌跡", fontsize=20, pad=20, fontproperties=prop)
+                            ax.set_ylabel("総合スコア", fontsize=16, fontproperties=prop)
+                            ax.set_xlabel("日付", fontsize=16, fontproperties=prop)
+                            for label in ax.get_xticklabels() + ax.get_yticklabels():
+                                label.set_fontproperties(prop)
+                                label.set_fontsize(14)
+
+                            bbox_style = dict(boxstyle='round,pad=0.4', fc='white', ec='none', alpha=0.85)
+                            ax.axhspan(0, 20, color=PHASE_COLORS["超急性期"], alpha=0.3)
+                            ax.axhspan(20, 60, color=PHASE_COLORS["維持期"], alpha=0.3)
+                            ax.axhspan(60, 80, color=PHASE_COLORS["回復期"], alpha=0.3)
+                            ax.axhspan(80, 100, color=PHASE_COLORS["転棟期"], alpha=0.3)
+                            ax.text(0.02, 0.1, "超急性期", fontsize=18, transform=ax.transAxes, bbox=bbox_style, fontproperties=prop)
+                            ax.text(0.02, 0.4, "維持期", fontsize=18, transform=ax.transAxes, bbox=bbox_style, fontproperties=prop)
+                            ax.text(0.02, 0.7, "回復期", fontsize=18, transform=ax.transAxes, bbox=bbox_style, fontproperties=prop)
+                            ax.text(0.02, 0.9, "転棟期", fontsize=18, transform=ax.transAxes, bbox=bbox_style, fontproperties=prop)
+                        else: # フォントがない場合のフォールバック
+                            ax.set_title("Trajectory Sheet", fontsize=20, pad=20)
+                            ax.set_ylabel("Score", fontsize=16)
+                            ax.set_xlabel("Date", fontsize=16)
+                            ax.tick_params(axis='both', which='major', labelsize=14)
+                        # ★★★ ここまで修正 ★★★#
                         plt.tight_layout(pad=2.0)
                         st.pyplot(fig)
                 else:
@@ -384,7 +425,7 @@ def run_app():
             #管理モード
             st.header("管理")
             if patient_id_to_use and not display_df.empty:
-    # ★★★ 機能B ★★★
+    # ★転帰★
                 st.write(f"**{patient_id_to_use} の管理**")
                 outcome_options = ["", "軽快", "BSC", "死亡", "その他"]
                 selected_outcome = st.selectbox("退室時転帰を選択してください:", options=outcome_options)
@@ -476,12 +517,23 @@ def run_app():
                             # ★★★ groupbyとX軸も新しい列に変更 ★★★
                             mean_trajectory = group_df.groupby('プロット用経過日数')['総合スコア'].mean().reset_index()
                             ax.plot(mean_trajectory['プロット用経過日数'], mean_trajectory['総合スコア'], marker='o', linestyle='-', linewidth=3, color='red', label=f'{selected_disease_group} 平均')
-                            ax.set_title(f"【{selected_disease_group}】治療軌跡の重ね合わせ", fontsize=16)
-                            ax.set_xlabel("ICU入室後経過日数", fontsize=16)
-                            ax.set_ylabel("総合スコア", fontsize=16)
+                        # ★★★ ここからフォント設定を修正 ★★★
+                            if prop:
+                                ax.set_title(f"【{selected_disease_group}】治療軌跡の重ね合わせ", fontsize=16, fontproperties=prop)
+                                ax.set_xlabel("ICU入室後経過日数", fontsize=12, fontproperties=prop)
+                                ax.set_ylabel("総合スコア", fontsize=12, fontproperties=prop)
+                                ax.legend(prop=prop)
+                                for label in ax.get_xticklabels() + ax.get_yticklabels():
+                                    label.set_fontproperties(prop)
+                            else:
+                                ax.set_title(f"[{selected_disease_group}] Trajectory Overlay")
+                                ax.set_xlabel("Days since ICU admission")
+                                ax.set_ylabel("Total Score")
+                                ax.legend()
+                        # ★★★ ここまで修正 ★★★
+
                             ax.set_ylim(0, 105)
                             ax.grid(True, linestyle='--', alpha=0.6)
-                            ax.legend()
 
                             st.pyplot(fig)
                             # ★★★ ここから回復速度の可視化機能を追加 ★★★
@@ -505,9 +557,18 @@ def run_app():
                                 average_speed.plot(kind='bar', ax=ax_speed, color=['skyblue' if x >= 0 else 'salmon' for x in average_speed.values])
 
                                 ax_speed.axhline(0, color='grey', linewidth=0.8)
-                                ax_speed.set_title(f"【{selected_disease_group}】回復速度", fontsize=16)
-                                ax_speed.set_xlabel("ICU入室後経過日数", fontsize=16)
-                                ax_speed.set_ylabel("前日からの平均スコア変化量", fontsize=16)
+                            # ★★★ ここからフォント設定を修正 ★★★
+                                if prop:
+                                    ax_speed.set_title(f"【{selected_disease_group}】回復速度", fontsize=16, fontproperties=prop)
+                                    ax_speed.set_xlabel("ICU入室後経過日数", fontsize=12, fontproperties=prop)
+                                    ax_speed.set_ylabel("前日からの平均スコア変化量", fontsize=12, fontproperties=prop)
+                                    for label in ax_speed.get_xticklabels() + ax_speed.get_yticklabels():
+                                        label.set_fontproperties(prop)
+                                else:
+                                    ax_speed.set_title(f"[{selected_disease_group}] Recovery Speed")
+                                    ax_speed.set_xlabel("Days since ICU admission")
+                                    ax_speed.set_ylabel("Avg. Daily Score Change")
+                            # ★★★ ここまで修正 ★★★
                                 ax_speed.grid(True, axis='y', linestyle='--', alpha=0.6)
 
                                 st.pyplot(fig_speed)
@@ -529,9 +590,20 @@ def run_app():
                         # seabornを使って箱ひげ図を描画
                         sns.boxplot(data=days_in_phase, x='疾患群', y='日数', hue='フェーズ', ax=ax)
 
-                        ax.set_title("疾患群ごとのフェーズ別滞在日数", fontsize=16)
-                        ax.set_xlabel("疾患群", fontsize=16)
-                        ax.set_ylabel("滞在日数", fontsize=16)
+                    # ★★★ ここからフォント設定を修正 ★★★
+                        if prop:
+                            ax.set_title("疾患群ごとのフェーズ別滞在日数", fontsize=16, fontproperties=prop)
+                            ax.set_xlabel("疾患群", fontsize=12, fontproperties=prop)
+                            ax.set_ylabel("滞在日数", fontsize=12, fontproperties=prop)
+                            ax.legend(prop=prop, title='フェーズ')
+                            for label in ax.get_xticklabels() + ax.get_yticklabels():
+                                label.set_fontproperties(prop)
+                        else:
+                            ax.set_title("Days in Each Phase per Disease Group")
+                            ax.set_xlabel("Disease Group")
+                            ax.set_ylabel("Days")
+                            ax.legend(title='Phase')
+                # ★★★ ここまで修正 ★★★
                         plt.xticks(rotation=30, ha='right')
 
                         st.pyplot(fig)
@@ -605,7 +677,6 @@ def run_app():
                                     summary_df.loc[f"{event} 経験率 (%)", group] = f"{rate_info['rate']:.1f} ({int(rate_info['count'])}/{int(rate_info['total'])})"
 
                         st.dataframe(summary_df.fillna("-"))
-                # ★★★ ここまで全面的に修正 ★★★
     
 if __name__ == "__main__":
     run_app()
