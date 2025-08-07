@@ -1,13 +1,12 @@
-name: Gemini Action Resolve Test
+name: Google Action Resolve Test
 
 on:
-  push:
-    branches: [ action-test-2 ] # このブランチにpushされたら実行
+  pull_request:
+    types: [opened, synchronize]
 
 jobs:
   resolve-test:
     runs-on: ubuntu-latest
     steps:
-      # Geminiのアクションをただ呼び出すだけのステップ
-      - name: Attempt to resolve the Gemini Action
-        uses: google/gemini-code-review-action@v1
+      - name: Attempt to resolve another Google Action
+        uses: google-github-actions/auth@v2
