@@ -113,6 +113,8 @@ def run_app():
     st.write("")
 
     if 'logged_in' not in st.session_state: st.session_state.logged_in = False
+     # ★★★ 機能A：画面の状態管理を追加 ★★★
+    if 'view_mode' not in st.session_state: st.session_state.view_mode = 'main'
     
     if not st.session_state.get('logged_in'):
         st.header("ログイン")
@@ -223,66 +225,86 @@ def run_app():
                 display_df = calculate_derived_columns(display_df)
                 if not display_df.empty:
                     st.header(f"患者: {patient_id_to_use}")
-                    latest_record_main = display_df.sort_values(by="日付", ascending=False).iloc[0]; st.markdown(f"#### **疾患群:** {latest_record_main['疾患群']}"); st.write("---")
-                    col1, col2 = st.columns([1, 2])
-                    with col1:
-                        available_dates = sorted(pd.to_datetime(display_df['日付']).dt.date.unique(), reverse=True)
-                        selected_date = st.selectbox("日付を選択", options=available_dates, format_func=lambda d: d.strftime('%Y-%m-%d'))
-                    with col2:
-                        times_on_date = display_df[pd.to_datetime(display_df['日付']).dt.date == selected_date]['時間帯'].unique()
-                        index_val = 1 if "夕" in times_on_date and len(times_on_date) > 1 else 0
-                        selected_time = st.radio("時間帯を選択", ["朝", "夕"], horizontal=True, index=index_val)
-                    df_sorted = display_df.copy(); df_sorted['日付'] = pd.to_datetime(df_sorted['日付'])
-                    df_sorted['プロット用日時'] = df_sorted.apply(lambda row: row['日付'].replace(hour=8 if row['時間帯'] == '朝' else 20), axis=1)
-                    df_sorted = df_sorted.sort_values(by='プロット用日時').reset_index(drop=True)
-                    current_index = df_sorted.index[(df_sorted['日付'].dt.date == selected_date) & (df_sorted['時間帯'] == selected_time)].tolist()
-                    if current_index:
-                        current_idx = current_index[0]; current_record = df_sorted.iloc[current_idx]
-                        previous_record = df_sorted.iloc[current_idx - 1] if current_idx > 0 else None
-                        st.subheader("スコアサマリー"); cols_metric = st.columns(2)
-                        with cols_metric[0]:
-                            if previous_record is not None:
-                                phase_color = PHASE_COLORS.get(previous_record['フェーズ'], '#888')
-                                st.markdown(f'<div class="metric-container"> <div style="font-size: 14px; color: #888;">前回 ({previous_record["日付"].strftime("%m/%d")} {previous_record["時間帯"]})</div> <div style="font-size: 32px; font-weight: bold; color: #333;">{int(previous_record["総合スコア"])}</div> <div style="font-size: 18px; font-weight: bold; color: {phase_color};">{previous_record["フェーズ"]}</div> </div>', unsafe_allow_html=True)
-                            else: st.info("比較対象の前回データがありません。")
-                        with cols_metric[1]:
-                            phase_color = PHASE_COLORS.get(current_record['フェーズ'], '#888')
-                            st.markdown(f'<div class="metric-container"> <div style="font-size: 14px; color: #888;">今回 ({current_record["日付"].strftime("%m/%d")} {current_record["時間帯"]})</div> <div style="font-size: 32px; font-weight: bold; color: #1f497d;">{int(current_record["総合スコア"])}</div> <div style="font-size: 18px; font-weight: bold; color: {phase_color};">{current_record["フェーズ"]}</div> </div>', unsafe_allow_html=True)
-                        st.write("---"); st.subheader("コンディションサマリー（比較）")
-                        current_data = current_record[FACTOR_SCORE_NAMES].to_dict(); previous_data = previous_record[FACTOR_SCORE_NAMES].to_dict() if previous_record is not None else None
-                        current_label, previous_label, current_color, previous_color, current_style, previous_style = ("当日 夕", "当日 朝", 'red', 'blue', '-', '-') if selected_time == '夕' else ("当日 朝", "前日 夕", 'blue', 'red', '-', '--')
-                        fig_radar = create_radar_chart(labels=FACTOR_SCORE_NAMES, current_data=current_data, previous_data=previous_data, current_label=current_label, previous_label=previous_label, current_color=current_color, previous_color=previous_color, current_style=current_style, previous_style=previous_style)
-                        st.pyplot(fig_radar)
-                    else: st.info(f"{selected_date.strftime('%Y-%m-%d')} {selected_time} のデータはありません。")
-                    st.write("---"); st.subheader("軌跡シート")
-                    df_graph = display_df.copy()
-                    if not df_graph.empty:
-                        df_graph['日付'] = pd.to_datetime(df_graph['日付']); df_graph['プロット用日時'] = df_graph.apply(lambda row: row['日付'].replace(hour=8 if row['時間帯'] == '朝' else 20), axis=1)
-                        df_graph = df_graph.sort_values(by='プロット用日時'); fig, ax = plt.subplots(figsize=(12, 7))
-                        ax.plot(df_graph['プロット用日時'], pd.to_numeric(df_graph['総合スコア'], errors='coerce'), marker='o', linestyle='-', markersize=8)
-                        events_to_plot = df_graph.dropna(subset=['イベント'])
-                        for _, row in events_to_plot.iterrows():
-                            event_string, plot_time, plot_score = row['イベント'], row['プロット用日時'], pd.to_numeric(row['総合スコア'], errors='coerce')
-                            if pd.isna(plot_score) or not event_string: continue
-                            first_event = event_string.split(',')[0].strip(); flag = EVENT_FLAGS.get(first_event)
-                            if flag:
-                                ax.scatter(plot_time, plot_score, color=flag['color'], marker=flag['marker'], s=200, zorder=12)
-                                ax.annotate(event_string, (plot_time, plot_score), xytext=(0, 15), textcoords='offset points', ha='center', va='bottom', bbox=dict(boxstyle='round,pad=0.2', fc=flag['color'], alpha=0.7), fontproperties=prop)
-                        ax.xaxis.set_major_locator(mdates.DayLocator(interval=1)); ax.xaxis.set_major_formatter(mdates.DateFormatter('%m/%d')); fig.autofmt_xdate(rotation=30)
-                        ax.set_ylim(-5, 105); ax.grid(True, axis='y', linestyle='--', alpha=0.6)
-                        if prop:
-                            ax.set_title("治療フェーズの軌跡", fontsize=20, pad=20, fontproperties=prop); ax.set_ylabel("総合スコア", fontsize=16, fontproperties=prop); ax.set_xlabel("日付", fontsize=16, fontproperties=prop)
-                            for label in ax.get_xticklabels() + ax.get_yticklabels(): label.set_fontproperties(prop); label.set_fontsize(14)
-                            bbox_style = dict(boxstyle='round,pad=0.4', fc='white', ec='none', alpha=0.85)
-                            ax.axhspan(0, 20, color=PHASE_COLORS["超急性期"], alpha=0.3); ax.axhspan(20, 60, color=PHASE_COLORS["維持期"], alpha=0.3)
-                            ax.axhspan(60, 80, color=PHASE_COLORS["回復期"], alpha=0.3); ax.axhspan(80, 100, color=PHASE_COLORS["転棟期"], alpha=0.3)
-                            ax.text(0.02, 0.1, "超急性期", fontsize=18, transform=ax.transAxes, bbox=bbox_style, fontproperties=prop)
-                            ax.text(0.02, 0.4, "維持期", fontsize=18, transform=ax.transAxes, bbox=bbox_style, fontproperties=prop)
-                            ax.text(0.02, 0.7, "回復期", fontsize=18, transform=ax.transAxes, bbox=bbox_style, fontproperties=prop)
-                            ax.text(0.02, 0.9, "転棟期", fontsize=18, transform=ax.transAxes, bbox=bbox_style, fontproperties=prop)
-                        else:
-                            ax.set_title("Trajectory Sheet", fontsize=20, pad=20); ax.set_ylabel("Score", fontsize=16); ax.set_xlabel("Date", fontsize=16); ax.tick_params(axis='both', which='major', labelsize=14)
-                        plt.tight_layout(pad=2.0); st.pyplot(fig)
+                # ★★★ 機能B：ここから画面分岐ロジックを追加 ★★★
+                # 現在の画面モードに応じて表示を切り替え
+                    if st.session_state.view_mode == 'main':
+                    # --- メイン表示モード ---
+                        if st.button("🖨️ 印刷用サマリーレポートを作成"):
+                            st.session_state.view_mode = 'report'
+                            st.rerun()
+                        latest_record_main = display_df.sort_values(by="日付", ascending=False).iloc[0];
+                        st.markdown(f"#### **疾患群:** {latest_record_main['疾患群']}");
+                        st.write("---")
+
+                        col1, col2 = st.columns([1, 2])
+                        with col1:
+                            available_dates = sorted(pd.to_datetime(display_df['日付']).dt.date.unique(), reverse=True)
+                            selected_date = st.selectbox("日付を選択", options=available_dates, format_func=lambda d: d.strftime('%Y-%m-%d'))
+                        with col2:
+                            times_on_date = display_df[pd.to_datetime(display_df['日付']).dt.date == selected_date]['時間帯'].unique()
+                            index_val = 1 if "夕" in times_on_date and len(times_on_date) > 1 else 0
+                            selected_time = st.radio("時間帯を選択", ["朝", "夕"], horizontal=True, index=index_val)
+                        df_sorted = display_df.copy(); df_sorted['日付'] = pd.to_datetime(df_sorted['日付'])
+                        df_sorted['プロット用日時'] = df_sorted.apply(lambda row: row['日付'].replace(hour=8 if row['時間帯'] == '朝' else 20), axis=1)
+                        df_sorted = df_sorted.sort_values(by='プロット用日時').reset_index(drop=True)
+                        current_index = df_sorted.index[(df_sorted['日付'].dt.date == selected_date) & (df_sorted['時間帯'] == selected_time)].tolist()
+                        if current_index:
+                            current_idx = current_index[0]; current_record = df_sorted.iloc[current_idx]
+                            previous_record = df_sorted.iloc[current_idx - 1] if current_idx > 0 else None
+                            st.subheader("スコアサマリー"); cols_metric = st.columns(2)
+                            with cols_metric[0]:
+                                if previous_record is not None:
+                                    phase_color = PHASE_COLORS.get(previous_record['フェーズ'], '#888')
+                                    st.markdown(f'<div class="metric-container"> <div style="font-size: 14px; color: #888;">前回 ({previous_record["日付"].strftime("%m/%d")} {previous_record["時間帯"]})</div> <div style="font-size: 32px; font-weight: bold; color: #333;">{int(previous_record["総合スコア"])}</div> <div style="font-size: 18px; font-weight: bold; color: {phase_color};">{previous_record["フェーズ"]}</div> </div>', unsafe_allow_html=True)
+                                else: st.info("比較対象の前回データがありません。")
+                            with cols_metric[1]:
+                                phase_color = PHASE_COLORS.get(current_record['フェーズ'], '#888')
+                                st.markdown(f'<div class="metric-container"> <div style="font-size: 14px; color: #888;">今回 ({current_record["日付"].strftime("%m/%d")} {current_record["時間帯"]})</div> <div style="font-size: 32px; font-weight: bold; color: #1f497d;">{int(current_record["総合スコア"])}</div> <div style="font-size: 18px; font-weight: bold; color: {phase_color};">{current_record["フェーズ"]}</div> </div>', unsafe_allow_html=True)
+                            st.write("---"); st.subheader("コンディションサマリー（比較）")
+                            current_data = current_record[FACTOR_SCORE_NAMES].to_dict(); previous_data = previous_record[FACTOR_SCORE_NAMES].to_dict() if previous_record is not None else None
+                            current_label, previous_label, current_color, previous_color, current_style, previous_style = ("当日 夕", "当日 朝", 'red', 'blue', '-', '-') if selected_time == '夕' else ("当日 朝", "前日 夕", 'blue', 'red', '-', '--')
+                            fig_radar = create_radar_chart(labels=FACTOR_SCORE_NAMES, current_data=current_data, previous_data=previous_data, current_label=current_label, previous_label=previous_label, current_color=current_color, previous_color=previous_color, current_style=current_style, previous_style=previous_style)
+                            st.pyplot(fig_radar)
+                        else: st.info(f"{selected_date.strftime('%Y-%m-%d')} {selected_time} のデータはありません。")
+                        st.write("---"); st.subheader("軌跡シート")
+                        df_graph = display_df.copy()
+                        if not df_graph.empty:
+                            df_graph['日付'] = pd.to_datetime(df_graph['日付']); df_graph['プロット用日時'] = df_graph.apply(lambda row: row['日付'].replace(hour=8 if row['時間帯'] == '朝' else 20), axis=1)
+                            df_graph = df_graph.sort_values(by='プロット用日時'); fig, ax = plt.subplots(figsize=(12, 7))
+                            ax.plot(df_graph['プロット用日時'], pd.to_numeric(df_graph['総合スコア'], errors='coerce'), marker='o', linestyle='-', markersize=8)
+                            events_to_plot = df_graph.dropna(subset=['イベント'])
+                            for _, row in events_to_plot.iterrows():
+                                event_string, plot_time, plot_score = row['イベント'], row['プロット用日時'], pd.to_numeric(row['総合スコア'], errors='coerce')
+                                if pd.isna(plot_score) or not event_string: continue
+                                first_event = event_string.split(',')[0].strip(); flag = EVENT_FLAGS.get(first_event)
+                                if flag:
+                                    ax.scatter(plot_time, plot_score, color=flag['color'], marker=flag['marker'], s=200, zorder=12)
+                                    ax.annotate(event_string, (plot_time, plot_score), xytext=(0, 15), textcoords='offset points', ha='center', va='bottom', bbox=dict(boxstyle='round,pad=0.2', fc=flag['color'], alpha=0.7), fontproperties=prop)
+                            ax.xaxis.set_major_locator(mdates.DayLocator(interval=1)); ax.xaxis.set_major_formatter(mdates.DateFormatter('%m/%d')); fig.autofmt_xdate(rotation=30)
+                            ax.set_ylim(-5, 105); ax.grid(True, axis='y', linestyle='--', alpha=0.6)
+                            if prop:
+                                ax.set_title("治療フェーズの軌跡", fontsize=20, pad=20, fontproperties=prop); ax.set_ylabel("総合スコア", fontsize=16, fontproperties=prop); ax.set_xlabel("日付", fontsize=16, fontproperties=prop)
+                                for label in ax.get_xticklabels() + ax.get_yticklabels(): label.set_fontproperties(prop); label.set_fontsize(14)
+                                bbox_style = dict(boxstyle='round,pad=0.4', fc='white', ec='none', alpha=0.85)
+                                ax.axhspan(0, 20, color=PHASE_COLORS["超急性期"], alpha=0.3); ax.axhspan(20, 60, color=PHASE_COLORS["維持期"], alpha=0.3)
+                                ax.axhspan(60, 80, color=PHASE_COLORS["回復期"], alpha=0.3); ax.axhspan(80, 100, color=PHASE_COLORS["転棟期"], alpha=0.3)
+                                ax.text(0.02, 0.1, "超急性期", fontsize=18, transform=ax.transAxes, bbox=bbox_style, fontproperties=prop)
+                                ax.text(0.02, 0.4, "維持期", fontsize=18, transform=ax.transAxes, bbox=bbox_style, fontproperties=prop)
+                                ax.text(0.02, 0.7, "回復期", fontsize=18, transform=ax.transAxes, bbox=bbox_style, fontproperties=prop)
+                                ax.text(0.02, 0.9, "転棟期", fontsize=18, transform=ax.transAxes, bbox=bbox_style, fontproperties=prop)
+                            else:
+                                ax.set_title("Trajectory Sheet", fontsize=20, pad=20); ax.set_ylabel("Score", fontsize=16); ax.set_xlabel("Date", fontsize=16); ax.tick_params(axis='both', which='major', labelsize=14)
+                            plt.tight_layout(pad=2.0); st.pyplot(fig)
+                    # ↓↓↓ここにご提示のコードブロックを挿入します↓↓↓
+                    elif st.session_state.view_mode == 'report':
+                        # --- レポート表示モード ---
+                        if st.button("🔙 メイン画面に戻る"):
+                            st.session_state.view_mode = 'main'
+                            st.rerun()
+
+                        st.write("---")
+                        st.subheader("患者サマリーレポート")
+                        st.write("ここに、印刷に適したレイアウトで軌跡シートやサマリーが表示されます。")
                 else: st.info(f"「{patient_id_to_use}」さんのデータはまだありません。")
             else: st.info("サイドバーで患者を選択または新規登録してください。")
             st.write("---"); st.header("管理")
@@ -366,7 +388,7 @@ def run_app():
                                         ax_speed.set_ylabel("前日からの平均スコア変化量", fontsize=12, fontproperties=prop)
                                         for label in ax_speed.get_xticklabels() + ax_speed.get_yticklabels(): label.set_fontproperties(prop)
                                     else:
-                                        ax_speed.set_title(f"[{selected_disease_group}] Recovery Speed"); ax_speed.set_xlabel("Days since ICU admission"); ax_speed.set_ylabel("Avg. Daily Score Change")
+                                        ax_speed.set_title(f"[{selected_disease_group}] Recovery Speed"); ax_speed.set_xlabel("Days since ICU admission"); ax.set_ylabel("Avg. Daily Score Change")
                                     ax_speed.grid(True, axis='y', linestyle='--', alpha=0.6); st.pyplot(fig_speed)
                         else: st.info("分析対象の疾患群がデータにありません。")
                     with tab2:
@@ -378,7 +400,7 @@ def run_app():
                         sns.boxplot(data=days_in_phase, x='疾患群', y='日数', hue='フェーズ', ax=ax)
                         if prop:
                             ax.set_title("疾患群ごとのフェーズ別滞在日数", fontsize=16, fontproperties=prop); ax.set_xlabel("疾患群", fontsize=12, fontproperties=prop)
-                            ax.set_ylabel("滞在日数", fontsize=12, fontproperties=prop); ax.legend(prop=prop, title='フェーズ')
+                            ax.set_ylabel("滞在日数", fontsize=12, fontproperties=prop); legend = ax.legend(prop=prop, title='フェーズ'); plt.setp(legend.get_title(), fontproperties=prop)
                             for label in ax.get_xticklabels() + ax.get_yticklabels(): label.set_fontproperties(prop)
                         else:
                             ax.set_title("Days in Each Phase per Disease Group"); ax.set_xlabel("Disease Group"); ax.set_ylabel("Days"); ax.legend(title='Phase')
@@ -392,13 +414,13 @@ def run_app():
                         median_los = grouped_los.median(); q1_los = grouped_los.quantile(0.25); q3_los = grouped_los.quantile(0.75)
                         milestone_events = ["抜管", "SBT成功", "昇圧薬離脱", "補助循環離脱", "腎代替療法終了"]; milestone_results = {}
                         for event in milestone_events:
-                            event_df = archived_df_dashboard[archived_df_dashboard['イベント'].str.contains(event, na=False)]
+                            event_df = archived_df_dashboard[archived_df_dashboard['イベント'].fillna('').str.split(r'\s*,\s*', regex=True).apply(lambda x: event in x)]
                             days_to_event = event_df.groupby('アプリ用患者ID')['経過日数'].min()
                             event_days_df = pd.merge(days_to_event, patient_to_group, on='アプリ用患者ID'); grouped_event_days = event_days_df.groupby('疾患群')['経過日数']
                             milestone_results[event] = {"median": grouped_event_days.median(), "q1": grouped_event_days.quantile(0.25), "q3": grouped_event_days.quantile(0.75)}
                         complication_events = ["再挿管", "気管切開", "新規不整脈", "出血イベント", "せん妄", "新規感染症"]; complication_results = {}
                         for event in complication_events:
-                            patients_with_event = archived_df_dashboard[archived_df_dashboard['イベント'].str.contains(event, na=False)]['アプリ用患者ID'].unique()
+                            patients_with_event = archived_df_dashboard[archived_df_dashboard['イベント'].fillna('').str.split(r'\s*,\s*', regex=True).apply(lambda x: event in x)]['アプリ用患者ID'].unique()
                             complication_rates = patient_to_group.to_frame().groupby('疾患群').apply(lambda g: pd.Series({'count': len([pid for pid in patients_with_event if pid in g.index]), 'total': len(g), 'rate': len([pid for pid in patients_with_event if pid in g.index]) / len(g) * 100 if len(g) > 0 else 0}), include_groups=False)
                             complication_results[event] = complication_rates
                         disease_groups = archived_df_dashboard['疾患群'].dropna().unique()
@@ -414,10 +436,11 @@ def run_app():
                                     q1 = milestone_results[event]['q1'].get(group); q3 = milestone_results[event]['q3'].get(group)
                                     summary_df.loc[f"{event}までの日数 (中央値 [IQR])", group] = f"{median:.1f} [{q1:.1f} - {q3:.1f}]"
                             for event in complication_events:
-                                rate_info = complication_results[event].get(group)
-                                if rate_info is not None: summary_df.loc[f"{event} 経験率 (%)", group] = f"{rate_info['rate']:.1f} ({int(rate_info['count'])}/{int(rate_info['total'])})"
+                                result_for_event = complication_results[event]
+                                if not result_for_event.empty and group in result_for_event.index:
+                                    rate_info = result_for_event.loc[group]
+                                    summary_df.loc[f"{event} 経験率 (%)", group] = f"{rate_info['rate']:.1f} ({int(rate_info['count'])}/{int(rate_info['total'])})"
                         st.dataframe(summary_df.fillna("-"))
-
 
 if __name__ == "__main__":
     run_app()
