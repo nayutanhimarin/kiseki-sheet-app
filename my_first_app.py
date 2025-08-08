@@ -379,44 +379,86 @@ def run_app():
                         if prop:
                             ax.set_title("疾患群ごとのフェーズ別滞在日数", fontsize=16, fontproperties=prop); ax.set_xlabel("疾患群", fontsize=12, fontproperties=prop)
                             ax.set_ylabel("滞在日数", fontsize=12, fontproperties=prop); ax.legend(prop=prop, title='フェーズ')
+                            # ★★★ 凡例タイトルのフォント設定を修正 ★★★
+                            legend = ax.legend(prop=prop, title='フェーズ')
+                            plt.setp(legend.get_title(), fontproperties=prop)
+                        # ★★★ ここまで修正 ★★★    
                             for label in ax.get_xticklabels() + ax.get_yticklabels(): label.set_fontproperties(prop)
                         else:
                             ax.set_title("Days in Each Phase per Disease Group"); ax.set_xlabel("Disease Group"); ax.set_ylabel("Days"); ax.legend(title='Phase')
                         plt.xticks(rotation=30, ha='right'); st.pyplot(fig)
                         st.write("---"); st.subheader("重要指標サマリー")
                         st.info("以下の表は、疾患群ごとの主要な臨床指標をまとめたものです。日数は「中央値 [四分位範囲]」、率は「パーセント (該当者数/全体数)」で表示しています。")
+                        # ★★★ ここからサマリー表の計算ロジック ★★★
+                        # --- 計算ロジック ---
+                        # 1. 患者数
                         patient_counts = archived_df_dashboard.groupby('疾患群')['アプリ用患者ID'].nunique()
+
+                        # 2. ICU総滞在日数
                         los_per_patient = archived_df_dashboard.groupby('アプリ用患者ID')['経過日数'].max()
                         patient_to_group = archived_df_dashboard.drop_duplicates(subset='アプリ用患者ID').set_index('アプリ用患者ID')['疾患群']
-                        los_df = pd.DataFrame({'ICU滞在日数': los_per_patient, '疾患群': patient_to_group}); grouped_los = los_df.groupby('疾患群')['ICU滞在日数']
-                        median_los = grouped_los.median(); q1_los = grouped_los.quantile(0.25); q3_los = grouped_los.quantile(0.75)
-                        milestone_events = ["抜管", "SBT成功", "昇圧薬離脱", "補助循環離脱", "腎代替療法終了"]; milestone_results = {}
+                        los_df = pd.DataFrame({'ICU滞在日数': los_per_patient, '疾患群': patient_to_group})
+                        grouped_los = los_df.groupby('疾患群')['ICU滞在日数']
+                        median_los = grouped_los.median()
+                        q1_los = grouped_los.quantile(0.25)
+                        q3_los = grouped_los.quantile(0.75)
+
+                        # 3. マイルストーン指標の計算
+                        milestone_events = ["抜管", "SBT成功", "昇圧薬離脱", "補助循環離脱", "腎代替療法終了"]
+                        milestone_results = {}
                         for event in milestone_events:
-                            event_df = archived_df_dashboard[archived_df_dashboard['イベント'].str.contains(event, na=False)]
+                            event_df = archived_df_dashboard[archived_df_dashboard['イベント'].fillna('').str.split(r'\s*,\s*', regex=True).apply(lambda x: event in x)]
                             days_to_event = event_df.groupby('アプリ用患者ID')['経過日数'].min()
-                            event_days_df = pd.merge(days_to_event, patient_to_group, on='アプリ用患者ID'); grouped_event_days = event_days_df.groupby('疾患群')['経過日数']
-                            milestone_results[event] = {"median": grouped_event_days.median(), "q1": grouped_event_days.quantile(0.25), "q3": grouped_event_days.quantile(0.75)}
-                        complication_events = ["再挿管", "気管切開", "新規不整脈", "出血イベント", "せん妄", "新規感染症"]; complication_results = {}
+                            event_days_df = pd.merge(days_to_event, patient_to_group, on='アプリ用患者ID')
+                            grouped_event_days = event_days_df.groupby('疾患群')['経過日数']
+                            milestone_results[event] = {
+                                "median": grouped_event_days.median(), "q1": grouped_event_days.quantile(0.25), "q3": grouped_event_days.quantile(0.75)
+                            }
+
+                       # 4. 合併症指標の計算
+                        complication_events = ["再挿管", "気管切開", "新規不整脈", "出血イベント", "せん妄", "新規感染症"]
+                        complication_results = {}
+                                        # ★★★ forループの中に計算処理を移動 ★★★
                         for event in complication_events:
-                            patients_with_event = archived_df_dashboard[archived_df_dashboard['イベント'].str.contains(event, na=False)]['アプリ用患者ID'].unique()
-                            complication_rates = patient_to_group.to_frame().groupby('疾患群').apply(lambda g: pd.Series({'count': len([pid for pid in patients_with_event if pid in g.index]), 'total': len(g), 'rate': len([pid for pid in patients_with_event if pid in g.index]) / len(g) * 100 if len(g) > 0 else 0}), include_groups=False)
+                            patients_with_event = archived_df_dashboard[archived_df_dashboard['イベント'].fillna('').str.split(r'\s*,\s*', regex=True).apply(lambda x: event in x)]['アプリ用患者ID'].unique()
+
+                            complication_rates = patient_to_group.to_frame().groupby('疾患群').apply(lambda g: pd.Series({
+                                'count': len([pid for pid in patients_with_event if pid in g.index]),
+                                'total': len(g),
+                                'rate': len([pid for pid in patients_with_event if pid in g.index]) / len(g) * 100 if len(g) > 0 else 0
+                            }), include_groups=False)
+
                             complication_results[event] = complication_rates
+
+                        # --- 表示用のDataFrameを作成 ---
                         disease_groups = archived_df_dashboard['疾患群'].dropna().unique()
-                        index_names = ["患者数 (人)", "ICU総滞在日数 (中央値 [IQR])"] + [f"{e}までの日数 (中央値 [IQR])" for e in milestone_events] + [f"{e} 経験率 (%)" for e in complication_events]
+                        index_names = ["患者数 (人)", "ICU総滞在日数 (中央値 [IQR])"] + \
+                                      [f"{e}までの日数 (中央値 [IQR])" for e in milestone_events] + \
+                                      [f"{e} 経験率 (%)" for e in complication_events]
                         summary_df = pd.DataFrame(index=index_names, columns=disease_groups)
+
+                        # DataFrameに値を埋める
                         for group in disease_groups:
                             summary_df.loc["患者数 (人)", group] = f"{patient_counts.get(group, 0)}"
                             los_text = f"{median_los.get(group, 0):.1f} [{q1_los.get(group, 0):.1f} - {q3_los.get(group, 0):.1f}]"
                             summary_df.loc["ICU総滞在日数 (中央値 [IQR])", group] = los_text
+
                             for event in milestone_events:
                                 median = milestone_results[event]['median'].get(group)
                                 if pd.notna(median):
-                                    q1 = milestone_results[event]['q1'].get(group); q3 = milestone_results[event]['q3'].get(group)
+                                    q1 = milestone_results[event]['q1'].get(group)
+                                    q3 = milestone_results[event]['q3'].get(group)
                                     summary_df.loc[f"{event}までの日数 (中央値 [IQR])", group] = f"{median:.1f} [{q1:.1f} - {q3:.1f}]"
+
                             for event in complication_events:
-                                rate_info = complication_results[event].get(group)
-                                if rate_info is not None: summary_df.loc[f"{event} 経験率 (%)", group] = f"{rate_info['rate']:.1f} ({int(rate_info['count'])}/{int(rate_info['total'])})"
+                        # ★★★ ここを修正 ★★★
+                                result_for_event = complication_results[event]
+                                if not result_for_event.empty and group in result_for_event.index:
+                                    rate_info = result_for_event.loc[group]
+                                    summary_df.loc[f"{event} 経験率 (%)", group] = f"{rate_info['rate']:.1f} ({int(rate_info['count'])}/{int(rate_info['total'])})"
+                        # ★★★ ここまで修正 ★★★
                         st.dataframe(summary_df.fillna("-"))
+                        # ★★★ ここまでサマリー表のロジック ★★★
 
 if __name__ == "__main__":
     run_app()

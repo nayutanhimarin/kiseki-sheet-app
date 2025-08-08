@@ -7,3 +7,4 @@ Anacondaの操作→Gidにコード反映
 
 ・git branch　#ブランチを確認#
 
+・cd G:\マイドライブ\ICU\VSC
