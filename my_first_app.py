@@ -418,5 +418,6 @@ def run_app():
                                 if rate_info is not None: summary_df.loc[f"{event} 経験率 (%)", group] = f"{rate_info['rate']:.1f} ({int(rate_info['count'])}/{int(rate_info['total'])})"
                         st.dataframe(summary_df.fillna("-"))
 
+
 if __name__ == "__main__":
     run_app()
