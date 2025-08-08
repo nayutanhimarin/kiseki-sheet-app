@@ -2,6 +2,6 @@ Anacondaの操作→Gidにコード反映
 ・conda activate kiseki_app
 ・cd /d G:\マイドライブ\ICU\VSC
 ・git add .
-・git commit -m"バグ修正済み”
+・git commit -m"印刷用サマリ実装”
 ・git push
 
