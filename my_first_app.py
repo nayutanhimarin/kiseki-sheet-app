@@ -176,7 +176,16 @@ def run_app():
                     disease_group_select = st.selectbox("疾患群を選択", options=DISEASE_OPTIONS, index=disease_group_index)
                     disease_group = st.text_input("疾患群を自由記載", value=default_values["疾患群"]) if disease_group_select == "その他（自由記載）" else disease_group_select
                     st.write("---"); st.write("**多職種スコア入力**")
-                    # ★★★ ここから全面的に修正 ★★★
+                # ★★★ ここにguidelines辞書の定義をまるごと挿入します ★★★
+                    guidelines = {
+                        "循環スコア": "- **0-19:** 昇圧薬(高用量) or 補助循環(ECMO/Impella)導入 or 致死的不整脈\n- **20-39:** 昇圧薬(中等量) or 補助循環化に安定\n- **40-59:** 昇圧薬(少量) or 補助循環weaning\n- **60-89:** 昇圧薬離脱 or 補助循環終了\n- **90-100:** 循環動態が安定",
+                        "呼吸スコア": "- **0-19:** 高い呼吸器設定、筋弛緩使用\n- **20-39:** 自発呼吸モード、低い呼吸器設定、非挿管だが頻呼吸\n- **40-59:** SBT成功～抜管\n- **60-89:** 抜管～HFNC/NPPV離脱\n- **90-100:** 経鼻酸素～酸素なしで安定",
+                        "意識_鎮静スコア": "- **0-19:** 深い鎮静(RASS-4~-5) or 意識障害\n- **20-39:** 浅い鎮静(RASS-1~-3) or せん妄\n- **40-59:** SAT成功\n- **60-89:** 会話可能 or 良好な筆談\n- **90-100:** 意識清明、良好な睡眠",
+                        "腎_体液スコア": "- **0-19:** 大量輸液・輸血が必要\n- **20-39:** 大量輸液は不要だが除水はできず\n- **40-59:** バランス±0～-500mL/dayほどの緩徐なマイナスバランス\n- **60-89:** refilling、積極的な除水\n- **90-100:** 適正体重への除水達成",
+                        "活動_リハスコア": "- **0-19:** 体位変換にも制限、ROM訓練のみ\n- **20-39:** ベッド上安静（ギャッジアップなど）\n- **40-59:** 端座位達成\n- **60-89:** 立位達成\n- **90-100:** 室内歩行開始",
+                        "栄養_消化管スコア": "- **0-19:** 絶食、消化管トラブルあり\n- **20-39:** 経腸栄養(少量)開始\n- **40-59:** 経腸栄養を増量中\n- **60-89:** 目標カロリー達成、経口摂取開始\n- **90-100:** 経口摂取が自立",
+                        "感染_炎症スコア": "- **0-19:** 敗血症性ショック\n- **20-39:** マーカー高値だがIL-6、PCT peak out\n- **40-59:** 解熱、CRPもpeak out\n- **60-89:** 抗菌薬のDe-escalation済み、CRP<10mg/dL\n- **90-100:** 抗菌薬終了、炎症反応正常化"
+                    }
                     factor_scores = {}
                     all_selected_events = [] # 全てのイベントを一時的に保存するリスト
                     # 各スコアとイベント入力欄をペアで表示
@@ -187,8 +196,16 @@ def run_app():
                     }
                     default_event_list = [e.strip() for e in default_values.get("イベント", "").split(',')] if default_values.get("イベント", "") else []
                     for score_name, category in score_event_map.items():
-                        factor_scores[score_name] = create_score_input(score_name, default_values.get(score_name, 10), score_name)
-                        # カテゴリに一致するイベントリストを作成
+                    # ★★★ ここから修正 ★★★
+                        col1, col2 = st.columns([0.85, 0.15])
+                        with col1:
+                        # スコア入力欄の作成をここで行う
+                            factor_scores[score_name] = create_score_input(score_name, default_values.get(score_name, 10), score_name)
+                        with col2:
+                        # 「？」アイコンを隣に配置
+                            st.popover("❓", help="スコアリングの目安").markdown(guidelines[score_name])
+
+                    # カテゴリに一致するイベントリストを作成
                         category_events = [event for event, props in EVENT_FLAGS.items() if props.get("category") == category]
                         # 既存データから、このカテゴリのイベントのみを抽出してデフォルト値とする
                         default_category_events = [e for e in default_event_list if e in category_events]
@@ -197,7 +214,8 @@ def run_app():
                         all_selected_events.extend(selected)
                         st.write("---")
 
-                    st.write("**ICU医師 最終判断**"); total_score = create_score_input("総合スコア", default_values.get("総合スコア", 10), "total_score")
+                    st.write("**ICU医師 最終判断**")
+                    total_score = create_score_input("総合スコア", default_values.get("総合スコア", 10), "total_score")
                     # カテゴリに属さない一般イベントの入力
                     general_events_options = [event for event, props in EVENT_FLAGS.items() if props.get("category") == "#その他"]
                     default_general_events = [e for e in default_event_list if e in general_events_options]
@@ -322,16 +340,16 @@ def run_app():
                             ax.set_ylim(-5, 105); ax.grid(True, axis='y', linestyle='--', alpha=0.6)
                             if prop:
                                 ax.set_title("治療フェーズの軌跡", fontsize=20, pad=20, fontproperties=prop); ax.set_ylabel("総合スコア", fontsize=16, fontproperties=prop); ax.set_xlabel("日付", fontsize=16, fontproperties=prop)
-                                for label in ax.get_xticklabels() + ax.get_yticklabels(): label.set_fontproperties(prop); label.set_fontsize(14)
+                                for label in ax.get_xticklabels() + ax.get_yticklabels(): label.set_fontproperties(prop); label.set_fontsize(16)
                                 bbox_style = dict(boxstyle='round,pad=0.4', fc='white', ec='none', alpha=0.85)
-                                ax.axhspan(0, 20, color=PHASE_COLORS["超急性期"], alpha=0.3); ax.axhspan(20, 60, color=PHASE_COLORS["維持期"], alpha=0.3)
-                                ax.axhspan(60, 80, color=PHASE_COLORS["回復期"], alpha=0.3); ax.axhspan(80, 100, color=PHASE_COLORS["転棟期"], alpha=0.3)
+                                ax.axhspan(0, 19, color=PHASE_COLORS["超急性期"], alpha=0.3); ax.axhspan(20, 59, color=PHASE_COLORS["維持期"], alpha=0.3)
+                                ax.axhspan(60, 80, color=PHASE_COLORS["回復期"], alpha=0.3); ax.axhspan(90, 100, color=PHASE_COLORS["転棟期"], alpha=0.3)
                                 ax.text(0.02, 0.1, "超急性期", fontsize=18, transform=ax.transAxes, bbox=bbox_style, fontproperties=prop)
                                 ax.text(0.02, 0.4, "維持期", fontsize=18, transform=ax.transAxes, bbox=bbox_style, fontproperties=prop)
                                 ax.text(0.02, 0.7, "回復期", fontsize=18, transform=ax.transAxes, bbox=bbox_style, fontproperties=prop)
                                 ax.text(0.02, 0.9, "転棟期", fontsize=18, transform=ax.transAxes, bbox=bbox_style, fontproperties=prop)
                             else:
-                                ax.set_title("Trajectory Sheet", fontsize=20, pad=20); ax.set_ylabel("Score", fontsize=16); ax.set_xlabel("Date", fontsize=16); ax.tick_params(axis='both', which='major', labelsize=14)
+                                ax.set_title("Trajectory Sheet", fontsize=20, pad=20); ax.set_ylabel("Score", fontsize=16); ax.set_xlabel("Date", fontsize=16); ax.tick_params(axis='both', which='major', labelsize=16)
                             plt.tight_layout(pad=2.0); st.pyplot(fig)
 
                     elif st.session_state.view_mode == 'report':
