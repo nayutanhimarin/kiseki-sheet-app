@@ -333,7 +333,7 @@ def run_app():
                             else:
                                 ax.set_title("Trajectory Sheet", fontsize=20, pad=20); ax.set_ylabel("Score", fontsize=16); ax.set_xlabel("Date", fontsize=16); ax.tick_params(axis='both', which='major', labelsize=14)
                             plt.tight_layout(pad=2.0); st.pyplot(fig)
-                    # ↓↓↓ここにご提示のコードブロックを挿入します↓↓↓
+
                     elif st.session_state.view_mode == 'report':
                         # --- レポート表示モード ---
                         if st.button("🔙 メイン画面に戻る"):
