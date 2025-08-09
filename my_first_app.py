@@ -32,9 +32,10 @@ EVENT_FLAGS = {
     "気管切開": {"category": "#呼吸", "color": "blue", "marker": "v"},"SBT成功": {"category": "#呼吸", "color": "lightgreen", "marker": "s"},"SBT失敗": {"category": "#呼吸", "color": "darkgreen", "marker": "s"},
     "昇圧薬開始": {"category": "#循環", "color": "darkorange", "marker": "P"},"昇圧薬増量": {"category": "#循環", "color": "darkorange", "marker": "P"},"昇圧薬減量": {"category": "#循環", "color": "orange", "marker": "P"},
     "昇圧薬離脱": {"category": "#循環", "color": "gold", "marker": "P"},"補助循環開始": {"category": "#循環", "color": "deeppink", "marker": "h"},"補助循環weaning": {"category": "#循環", "color": "hotpink", "marker": "h"},
-    "補助循環離脱": {"category": "#循環", "color": "lightpink", "marker": "h"},"新規不整脈": {"category": "#循環", "color": "red", "marker": "o"},"出血イベント": {"category": "#循環", "color": "darkred", "marker": "o"},
+    "補助循環離脱": {"category": "#循環", "color": "lightpink", "marker": "h"},"新規不整脈": {"category": "#循環", "color": "red", "marker": "o"},"出血イベント": {"category": "#循環", "color": "darkred", "marker": "o"},"AKI": {"category": "#腎/体液", "color": "mediumpurple", "marker": "D"},
     "腎代替療法開始": {"category": "#腎/体液", "color": "purple", "marker": "D"},"腎代替療法終了": {"category": "#腎/体液", "color": "purple", "marker": "D"},"せん妄": {"category": "#意識/鎮静", "color": "magenta", "marker": "*"},
     "SAT成功": {"category": "#意識/鎮静", "color": "lightpink", "marker": "*"},"SAT失敗": {"category": "#意識/鎮静", "color": "deeppink", "marker": "*"},"新規感染症": {"category": "#感染/炎症", "color": "brown", "marker": "X"},
+    "抗生剤de-escalation": {"category": "#感染/炎症", "color": "sandybrown", "marker": "X"},"ソースコントロール": {"category": "#感染/炎症", "color": "sienna", "marker": "X"}, 
     "端坐位": {"category": "#活動/リハ", "color": "cyan", "marker": "P"},"立位": {"category": "#活動/リハ", "color": "darkcyan", "marker": "P"},"歩行": {"category": "#活動/リハ", "color": "blue", "marker": "P"},
     "経管栄養開始": {"category": "#栄養/消化管", "color": "greenyellow", "marker": "+"},"経口摂取開始": {"category": "#栄養/消化管", "color": "lime", "marker": "+"}
 }
@@ -81,10 +82,10 @@ def create_radar_chart(labels, current_data, previous_data=None, current_label='
     ax.fill(angles, curr_values, color=current_color, alpha=0.25, zorder=9)
     ax.set_yticklabels([]); ax.set_xticks(angles[:-1])
     if prop:
-        ax.set_xticklabels(labels, fontsize=12, fontproperties=prop)
+        ax.set_xticklabels(labels, fontsize=16, fontproperties=prop)
         ax.legend(loc='upper right', bbox_to_anchor=(1.3, 1.1), prop=prop)
     else:
-        ax.set_xticklabels(labels, fontsize=12)
+        ax.set_xticklabels(labels, fontsize=16)
         ax.legend(loc='upper right', bbox_to_anchor=(1.3, 1.1))
     ax.set_rlim(0, 100); return fig
 
@@ -131,6 +132,7 @@ def run_app():
             except Exception as e: st.error(f"認証中にエラーが発生しました。Secretsが正しく設定されているか確認してください。: {e}")
     else:
         facility_id = st.session_state.facility_id; patient_id_to_use = None
+        # サイドバー
         with st.sidebar:
             st.header(f"施設ID: {facility_id}")
             if facility_id != st.secrets.get("master_credentials", {}).get("id", "master_admin_fallback"):
@@ -174,17 +176,37 @@ def run_app():
                     disease_group_select = st.selectbox("疾患群を選択", options=DISEASE_OPTIONS, index=disease_group_index)
                     disease_group = st.text_input("疾患群を自由記載", value=default_values["疾患群"]) if disease_group_select == "その他（自由記載）" else disease_group_select
                     st.write("---"); st.write("**多職種スコア入力**")
-                    guidelines = {"循環スコア": "- **0-20:** 昇圧薬(高用量) or 補助循環(ECMO/Impella)導入 or 致死的不整脈\n- **21-40:** 昇圧薬(中等量) or 補助循環化に安定\n- **41-60:** 昇圧薬(少量) or 補助循環weaning\n- **61-80:** 昇圧薬離脱 or 補助循環終了\n- **81-100:** 循環動態が安定", "呼吸スコア": "- **0-20:** 高い呼吸器設定、筋弛緩使用\n- **21-40:** 自発呼吸モード、低い呼吸器設定、非挿管だが頻呼吸\n- **41-60:** SBT成功～抜管\n- **61-80:** 抜管～HFNC/NPPV離脱\n- **81-100:** 経鼻酸素～酸素なしで安定", "意識_鎮静スコア": "- **0-20:** 深い鎮静(RASS-4~-5) or 意識障害\n- **21-40:** 浅い鎮静(RASS-1~-3) or せん妄\n- **41-60:** SAT成功\n- **61-80:** 会話可能 or 良好な筆談\n- **81-100:** 意識清明、良好な睡眠", "腎_体液スコア": "- **0-20:** 大量輸液・輸血が必要\n- **21-40:** 大量輸液は不要だが除水はできず\n- **41-60:** バランス±0～-500mL/dayほどの緩徐なマイナスバランス\n- **61-80:** refilling、積極的な除水\n- **81-100:** 適正体重への除水達成", "活動_リハスコア": "- **0-20:** 体位変換にも制限、ROM訓練のみ\n- **21-40:** ベッド上安静（ギャッジアップなど）\n- **41-60:** 端座位達成\n- **61-80:** 立位達成\n- **81-100:** 室内歩行開始", "栄養_消化管スコア": "- **0-20:** 絶食、消化管トラブルあり\n- **21-40:** 経腸栄養(少量)開始\n- **41-60:** 経腸栄養を増量中\n- **61-80:** 目標カロリー達成、経口摂取開始\n- **81-100:** 経口摂取が自立", "感染_炎症スコア": "- **0-20:** 敗血症性ショック\n- **21-40:** マーカー高値だがIL-6、PCT peak out\n- **41-60:** 解熱、CRPもpeak out\n- **61-80:** 抗菌薬のDe-escalation済み、CRP<10mg/dL\n- **81-100:** 抗菌薬終了、炎症反応正常化"}
+                    # ★★★ ここから全面的に修正 ★★★
                     factor_scores = {}
-                    for score_name in FACTOR_SCORE_NAMES:
-                        col1, col2 = st.columns([0.85, 0.15])
-                        with col1: factor_scores[score_name] = create_score_input(score_name, default_values.get(score_name, 10), score_name)
-                        with col2: st.popover("❓", help="スコアリングの目安").markdown(guidelines[score_name])
-                    st.write("---"); st.write("**ICU医師 最終判断**"); total_score = create_score_input("総合スコア", default_values.get("総合スコア", 10), "total_score")
-                    st.write("---"); st.write("**イベント**")
-                    major_event_options = list(EVENT_FLAGS.keys())
-                    default_event_text = default_values.get("イベント", ""); default_event_list = [e.strip() for e in default_event_text.split(',')] if default_event_text and isinstance(default_event_text, str) else []
-                    selected_events = st.multiselect("主要イベントを選択（複数可）", options=major_event_options, default=default_event_list); event_text = ", ".join(selected_events)
+                    all_selected_events = [] # 全てのイベントを一時的に保存するリスト
+                    # 各スコアとイベント入力欄をペアで表示
+                    score_event_map = {
+                        "循環スコア": "#循環", "呼吸スコア": "#呼吸", "意識_鎮静スコア": "#意識/鎮静",
+                        "腎_体液スコア": "#腎/体液", "活動_リハスコア": "#活動/リハ", "栄養_消化管スコア": "#栄養/消化管",
+                        "感染_炎症スコア": "#感染/炎症"
+                    }
+                    default_event_list = [e.strip() for e in default_values.get("イベント", "").split(',')] if default_values.get("イベント", "") else []
+                    for score_name, category in score_event_map.items():
+                        factor_scores[score_name] = create_score_input(score_name, default_values.get(score_name, 10), score_name)
+                        # カテゴリに一致するイベントリストを作成
+                        category_events = [event for event, props in EVENT_FLAGS.items() if props.get("category") == category]
+                        # 既存データから、このカテゴリのイベントのみを抽出してデフォルト値とする
+                        default_category_events = [e for e in default_event_list if e in category_events]
+
+                        selected = st.multiselect(f"{score_name} 関連イベント", options=category_events, default=default_category_events, key=f"{score_name}_events")
+                        all_selected_events.extend(selected)
+                        st.write("---")
+
+                    st.write("**ICU医師 最終判断**"); total_score = create_score_input("総合スコア", default_values.get("総合スコア", 10), "total_score")
+                    # カテゴリに属さない一般イベントの入力
+                    general_events_options = [event for event, props in EVENT_FLAGS.items() if props.get("category") == "#その他"]
+                    default_general_events = [e for e in default_event_list if e in general_events_options]
+                    selected_general = st.multiselect("その他イベント", options=general_events_options, default=default_general_events, key="general_events")
+                    all_selected_events.extend(selected_general)
+
+                    # 全てのイベントをカンマ区切り文字列に結合（データ形式を維持）
+                    event_text = ", ".join(all_selected_events)
+                    # ★★★ ここまで全面的に修正 ★★★
                     previous_total_score = None
                     if not existing_data.empty:
                         patient_df_copy = patient_df.copy(); patient_df_copy['日付'] = pd.to_datetime(patient_df_copy['日付'])
@@ -205,6 +227,7 @@ def run_app():
             if st.button("ログアウト"):
                 for key in list(st.session_state.keys()): del st.session_state[key]
                 st.rerun()
+        # メイン画面
         if facility_id == st.secrets.get("master_credentials", {}).get("id", "master_admin_fallback"):
             st.header("マスター管理者モード"); st.write("全施設のアーカイブデータを表示・管理します。")
             all_files = glob.glob(f"{DATA_FILE_PREFIX}*.csv")
@@ -276,10 +299,25 @@ def run_app():
                             for _, row in events_to_plot.iterrows():
                                 event_string, plot_time, plot_score = row['イベント'], row['プロット用日時'], pd.to_numeric(row['総合スコア'], errors='coerce')
                                 if pd.isna(plot_score) or not event_string: continue
-                                first_event = event_string.split(',')[0].strip(); flag = EVENT_FLAGS.get(first_event)
-                                if flag:
-                                    ax.scatter(plot_time, plot_score, color=flag['color'], marker=flag['marker'], s=200, zorder=12)
-                                    ax.annotate(event_string, (plot_time, plot_score), xytext=(0, 15), textcoords='offset points', ha='center', va='bottom', bbox=dict(boxstyle='round,pad=0.2', fc=flag['color'], alpha=0.7), fontproperties=prop)
+                        # ★★★ ここからイベント描画ロジックを修正 ★★★
+                                events = [e.strip() for e in event_string.split(',')]
+
+                        # 最初のイベントでマーカーをプロット
+                                first_event_flag = EVENT_FLAGS.get(events[0])
+                                if first_event_flag:
+                                    ax.scatter(plot_time, plot_score, color=first_event_flag['color'], marker=first_event_flag['marker'], s=200, zorder=12)
+
+                        # 各イベントを縦に並べて、色分けして表示
+                                vertical_offset = 10 # テキストの縦方向の初期オフセット
+                                for event in events:
+                                    flag = EVENT_FLAGS.get(event)
+                                    if flag and prop:
+                                        ax.text(plot_time, plot_score + vertical_offset, f" {event} ", # y座標をここで計算
+                                        ha='center', va='bottom',
+                                        bbox=dict(boxstyle='round,pad=0.2', fc=flag['color'], alpha=0.7),
+                                        fontproperties=prop)
+                                        vertical_offset += 10 # 次のテキストのためにオフセットを増やす
+                                # ★★★ ここまでイベント描画ロジックを修正 ★★★
                             ax.xaxis.set_major_locator(mdates.DayLocator(interval=1)); ax.xaxis.set_major_formatter(mdates.DateFormatter('%m/%d')); fig.autofmt_xdate(rotation=30)
                             ax.set_ylim(-5, 105); ax.grid(True, axis='y', linestyle='--', alpha=0.6)
                             if prop:
@@ -366,8 +404,8 @@ def run_app():
                                     current_patient_df = active_df[active_df['アプリ用患者ID'] == selected_active_patient]; current_patient_df = current_patient_df.sort_values(by='プロット用日時')
                                     ax.plot(current_patient_df['プロット用経過日数'], pd.to_numeric(current_patient_df['総合スコア'], errors='coerce'), marker='o', linestyle='-', linewidth=3, color='springgreen', label=f'治療中: {selected_active_patient}', zorder=15)
                                 if prop:
-                                    ax.set_title(f"【{selected_disease_group}】治療軌跡の重ね合わせ", fontsize=16, fontproperties=prop); ax.set_xlabel("ICU入室後経過日数", fontsize=12, fontproperties=prop)
-                                    ax.set_ylabel("総合スコア", fontsize=12, fontproperties=prop); ax.legend(prop=prop)
+                                    ax.set_title(f"【{selected_disease_group}】治療軌跡の重ね合わせ", fontsize=16, fontproperties=prop); ax.set_xlabel("ICU入室後経過日数", fontsize=16, fontproperties=prop)
+                                    ax.set_ylabel("総合スコア", fontsize=16, fontproperties=prop); ax.legend(prop=prop)
                                     for label in ax.get_xticklabels() + ax.get_yticklabels(): label.set_fontproperties(prop)
                                 else:
                                     ax.set_title(f"[{selected_disease_group}] Trajectory Overlay"); ax.set_xlabel("Days since ICU admission"); ax.set_ylabel("Total Score"); ax.legend()
@@ -384,8 +422,8 @@ def run_app():
                                     average_speed.plot(kind='bar', ax=ax_speed, color=['skyblue' if x >= 0 else 'salmon' for x in average_speed.values])
                                     ax_speed.axhline(0, color='grey', linewidth=0.8)
                                     if prop:
-                                        ax_speed.set_title(f"【{selected_disease_group}】回復速度", fontsize=16, fontproperties=prop); ax_speed.set_xlabel("ICU入室後経過日数", fontsize=12, fontproperties=prop)
-                                        ax_speed.set_ylabel("前日からの平均スコア変化量", fontsize=12, fontproperties=prop)
+                                        ax_speed.set_title(f"【{selected_disease_group}】回復速度", fontsize=16, fontproperties=prop); ax_speed.set_xlabel("ICU入室後経過日数", fontsize=16, fontproperties=prop)
+                                        ax_speed.set_ylabel("前日からの平均スコア変化量", fontsize=16, fontproperties=prop)
                                         for label in ax_speed.get_xticklabels() + ax_speed.get_yticklabels(): label.set_fontproperties(prop)
                                     else:
                                         ax_speed.set_title(f"[{selected_disease_group}] Recovery Speed"); ax_speed.set_xlabel("Days since ICU admission"); ax.set_ylabel("Avg. Daily Score Change")
@@ -399,8 +437,8 @@ def run_app():
                         fig, ax = plt.subplots(figsize=(12, 7))
                         sns.boxplot(data=days_in_phase, x='疾患群', y='日数', hue='フェーズ', ax=ax)
                         if prop:
-                            ax.set_title("疾患群ごとのフェーズ別滞在日数", fontsize=16, fontproperties=prop); ax.set_xlabel("疾患群", fontsize=12, fontproperties=prop)
-                            ax.set_ylabel("滞在日数", fontsize=12, fontproperties=prop); legend = ax.legend(prop=prop, title='フェーズ'); plt.setp(legend.get_title(), fontproperties=prop)
+                            ax.set_title("疾患群ごとのフェーズ別滞在日数", fontsize=16, fontproperties=prop); ax.set_xlabel("疾患群", fontsize=16, fontproperties=prop)
+                            ax.set_ylabel("滞在日数", fontsize=16, fontproperties=prop); legend = ax.legend(prop=prop, title='フェーズ'); plt.setp(legend.get_title(), fontproperties=prop)
                             for label in ax.get_xticklabels() + ax.get_yticklabels(): label.set_fontproperties(prop)
                         else:
                             ax.set_title("Days in Each Phase per Disease Group"); ax.set_xlabel("Disease Group"); ax.set_ylabel("Days"); ax.legend(title='Phase')
