@@ -343,7 +343,7 @@ def run_app():
                                 for label in ax.get_xticklabels() + ax.get_yticklabels(): label.set_fontproperties(prop); label.set_fontsize(16)
                                 bbox_style = dict(boxstyle='round,pad=0.4', fc='white', ec='none', alpha=0.85)
                                 ax.axhspan(0, 19, color=PHASE_COLORS["超急性期"], alpha=0.3); ax.axhspan(20, 59, color=PHASE_COLORS["維持期"], alpha=0.3)
-                                ax.axhspan(60, 80, color=PHASE_COLORS["回復期"], alpha=0.3); ax.axhspan(90, 100, color=PHASE_COLORS["転棟期"], alpha=0.3)
+                                ax.axhspan(60, 89, color=PHASE_COLORS["回復期"], alpha=0.3); ax.axhspan(90, 100, color=PHASE_COLORS["転棟期"], alpha=0.3)
                                 ax.text(0.02, 0.1, "超急性期", fontsize=18, transform=ax.transAxes, bbox=bbox_style, fontproperties=prop)
                                 ax.text(0.02, 0.4, "維持期", fontsize=18, transform=ax.transAxes, bbox=bbox_style, fontproperties=prop)
                                 ax.text(0.02, 0.7, "回復期", fontsize=18, transform=ax.transAxes, bbox=bbox_style, fontproperties=prop)
