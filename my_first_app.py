@@ -9,7 +9,7 @@ import numpy as np
 import seaborn as sns
 import matplotlib.font_manager as fm 
 
-# ★★★ フォント設定 ★★★
+# ★★★ フォント設定 ★★
 # アプリと同じディレクトリにあるフォントファイルへのパス
 font_path = 'ipaexg.ttf'
 # フォントプロパティをグローバル変数として定義
@@ -21,8 +21,8 @@ LOG_FILE_PREFIX = "log_data_"
 DISEASE_OPTIONS = ["敗血症性ショック", "心原性ショック", "心臓・大血管術後", "その他（自由記載）"]
 PHASE_LABELS = ["超急性期", "維持期", "回復期", "転棟期"]
 PHASE_COLORS = {
-    "超急性期": "#ffc0cb", "維持期": "#ffe4c4",
-    "回復期": "#ffd700", "転棟期": "#90ee90"
+    "超急性期":"#90ee90", "維持期": "#ffd700",
+    "回復期": "#ffe4c4", "転棟期":  "#ffc0cb"
 }
 FACTOR_SCORE_NAMES = ["循環スコア", "呼吸スコア", "意識_鎮静スコア", "腎_体液スコア", "活動_リハスコア", "栄養_消化管スコア", "感染_炎症スコア"]
 ALL_COLUMN_NAMES = ["アプリ用患者ID", "日付", "時間帯", "総合スコア"] + FACTOR_SCORE_NAMES + ["イベント", "ステータス", "疾患群", "要因タグ", "退室時転帰"]
