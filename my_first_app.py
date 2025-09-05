@@ -10,9 +10,7 @@ import seaborn as sns
 import matplotlib.font_manager as fm 
 
 # ★★★ フォント設定 ★★
-# アプリと同じディレクトリにあるフォントファイルへのパス
 font_path = 'ipaexg.ttf'
-# フォントプロパティをグローバル変数として定義
 prop = fm.FontProperties(fname=font_path) if os.path.exists(font_path) else None
 
 # --- 定数と設定 ---
@@ -112,50 +110,84 @@ def run_app():
         <div class="title-box"><h1>軌跡シートアプリ 🏥</h1></div>
     """, unsafe_allow_html=True)
     st.write("")
-
     if 'logged_in' not in st.session_state: st.session_state.logged_in = False
-     # ★★★ 機能A：画面の状態管理を追加 ★★★
     if 'view_mode' not in st.session_state: st.session_state.view_mode = 'main'
-    
+    # --- ログイン画面のロジック ---
     if not st.session_state.get('logged_in'):
         st.header("ログイン")
-        facility_id_input = st.text_input("施設ID"); password = st.text_input("パスワード", type="password")
-        if st.button("ログイン"):
-            try:
-                master_id_secret = st.secrets.get("master_credentials", {}).get("id"); master_pw_secret = st.secrets.get("master_credentials", {}).get("password")
-                passwords_secret = st.secrets.get("passwords", {})
-                if facility_id_input == master_id_secret and password == master_pw_secret:
-                    st.session_state.logged_in = True; st.session_state.facility_id = master_id_secret; st.rerun()
-                elif facility_id_input in passwords_secret and password == passwords_secret[facility_id_input]:
-                    st.session_state.logged_in = True; st.session_state.facility_id = facility_id_input; st.rerun()
-                else: st.error("施設IDまたはパスワードが間違っています。")
-            except Exception as e: st.error(f"認証中にエラーが発生しました。Secretsが正しく設定されているか確認してください。: {e}")
+        login_mode = st.radio(
+            "ログイン方法を選択してください",
+            ["施設IDでログイン", "お試し用IDでログイン"],
+            horizontal=True
+        )
+        if login_mode == "施設IDでログイン":
+            facility_id_input = st.text_input("施設ID")
+            password = st.text_input("パスワード", type="password")
+            if st.button("ログイン"):
+                try:
+                    master_id_secret = st.secrets.get("master_credentials", {}).get("id")
+                    master_pw_secret = st.secrets.get("master_credentials", {}).get("password")
+                    passwords_secret = st.secrets.get("passwords", {})
+                    if facility_id_input == master_id_secret and password == master_pw_secret:
+                        st.session_state.logged_in = True; st.session_state.facility_id = master_id_secret; st.rerun()
+                    elif facility_id_input in passwords_secret and password == passwords_secret[facility_id_input]:
+                        st.session_state.logged_in = True; st.session_state.facility_id = facility_id_input; st.rerun()
+                    else: st.error("施設IDまたはパスワードが間違っています。")
+                except Exception as e: st.error(f"認証中にエラーが発生しました。Secretsが正しく設定されているか確認してください。: {e}")
+        
+        else: # お試し用IDでログイン
+            st.info(
+                "お試し用IDでは、以下の機能が制限されます：\n"
+                "- アーカイブした患者データは保存されず、統計ダッシュボードに反映されません。\n"
+                "- 統計ダッシュボードは、サンプル画面が表示されます。"
+            )
+            if st.button("お試しを開始する"):
+                st.session_state.logged_in = True
+                st.session_state.facility_id = "trial_user"
+                st.session_state.trial_mode = True
+                st.rerun()            # ... (既存のダッシュボード表示ロジックが続く)
     else:
-        facility_id = st.session_state.facility_id; patient_id_to_use = None
+        facility_id = st.session_state.facility_id; 
+        DATA_FILE = f"patient_data_{facility_id}.csv" # DATA_FILEをここで定義
+        if facility_id != st.secrets.get("master_credentials", {}).get("id", "master_admin_fallback"):
+            if 'df' not in st.session_state or st.session_state.get('current_facility') != facility_id:
+                st.session_state.df = load_data(DATA_FILE) # ここではDATA_FILEを使うだけ
+                st.session_state.df['ステータス'] = st.session_state.df['ステータス'].fillna('在室中')
+                st.session_state.current_facility = facility_id
+        patient_id_to_use = None
         # サイドバー
+        # ★★★ ここからサイドバーのコード全体を置き換え ★★★
         with st.sidebar:
             st.header(f"施設ID: {facility_id}")
+
+            # --- マスター管理者以外のユーザー向けUI ---
             if facility_id != st.secrets.get("master_credentials", {}).get("id", "master_admin_fallback"):
-                DATA_FILE = f"patient_data_{facility_id}.csv"
-                if 'df' not in st.session_state or st.session_state.get('current_facility') != facility_id:
-                    st.session_state.df = load_data(DATA_FILE)
-                    st.session_state.df['ステータス'] = st.session_state.df['ステータス'].fillna('在室中')
-                    st.session_state.current_facility = facility_id
+                
+                # --- 1. 患者IDと日時の選択 ---
                 st.subheader("患者選択")
                 active_patients = sorted(st.session_state.df[st.session_state.df['ステータス'] == '在室中']['アプリ用患者ID'].unique()) if not st.session_state.df.empty else []
                 selected_patient = st.selectbox("表示・記録する患者IDを選択", options=["新しい患者を登録..."] + active_patients)
                 patient_id_to_use = st.text_input("新しいアプリ用患者IDを入力してください") if selected_patient == "新しい患者を登録..." else selected_patient
+                
                 if patient_id_to_use:
-                    st.subheader("データ入力・修正"); st.write(f"**対象患者:** {patient_id_to_use}")
+                    st.subheader("データ入力・修正")
+                    st.write(f"**対象患者:** {patient_id_to_use}")
                     record_date = st.date_input("日付", datetime.date.today())
                     if record_date > datetime.date.today(): st.error("未来の日付は入力できません。"); st.stop()
                     time_of_day = st.selectbox("時間帯", options=["朝", "夕"])
-                    default_values = {name: 10 for name in FACTOR_SCORE_NAMES}; default_values["総合スコア"] = 10; default_values["イベント"] = ""
+
+                    # --- 2. デフォルト値の準備（既存データ or 前回データの読み込み）---
+                    default_values = {name: 10 for name in FACTOR_SCORE_NAMES}
+                    default_values["総合スコア"] = 10
+                    default_values["イベント"] = ""
+                    
                     patient_df = st.session_state.df[st.session_state.df['アプリ用患者ID'] == patient_id_to_use]
                     if not patient_df.empty:
                         latest_disease_group = patient_df.sort_values(by="日付", ascending=False).iloc[0]['疾患群']
                         default_values["疾患群"] = latest_disease_group if pd.notna(latest_disease_group) else DISEASE_OPTIONS[0]
-                    else: default_values["疾患群"] = DISEASE_OPTIONS[0]
+                    else:
+                        default_values["疾患群"] = DISEASE_OPTIONS[0]
+
                     existing_data = patient_df[(patient_df['日付'] == str(record_date)) & (patient_df['時間帯'] == time_of_day)]
                     if not existing_data.empty:
                         record = existing_data.iloc[0].to_dict()
@@ -172,78 +204,88 @@ def run_app():
                                 last_record = previous_records.sort_values(by='プロット用日時').iloc[-1].to_dict()
                                 for col, val in last_record.items():
                                     if pd.notna(val) and col in default_values and col != 'イベント': default_values[col] = val
+                    
                     disease_group_index = DISEASE_OPTIONS.index(default_values["疾患群"]) if default_values["疾患群"] in DISEASE_OPTIONS else 3
                     disease_group_select = st.selectbox("疾患群を選択", options=DISEASE_OPTIONS, index=disease_group_index)
                     disease_group = st.text_input("疾患群を自由記載", value=default_values["疾患群"]) if disease_group_select == "その他（自由記載）" else disease_group_select
+
+                    # --- 3. UIウィジェットの描画と記録処理 ---
                     st.write("---"); st.write("**多職種スコア入力**")
-                # ★★★ ここにguidelines辞書の定義をまるごと挿入します ★★★
-                    guidelines = {
-                        "循環スコア": "- **0-19:** 昇圧薬(高用量) or 補助循環(ECMO/Impella)導入 or 致死的不整脈\n- **20-39:** 昇圧薬(中等量) or 補助循環化に安定\n- **40-59:** 昇圧薬(少量) or 補助循環weaning\n- **60-89:** 昇圧薬離脱 or 補助循環終了\n- **90-100:** 循環動態が安定",
-                        "呼吸スコア": "- **0-19:** 高い呼吸器設定、筋弛緩使用\n- **20-39:** 自発呼吸モード、低い呼吸器設定、非挿管だが頻呼吸\n- **40-59:** SBT成功～抜管\n- **60-89:** 抜管～HFNC/NPPV離脱\n- **90-100:** 経鼻酸素～酸素なしで安定",
-                        "意識_鎮静スコア": "- **0-19:** 深い鎮静(RASS-4~-5) or 意識障害\n- **20-39:** 浅い鎮静(RASS-1~-3) or せん妄\n- **40-59:** SAT成功\n- **60-89:** 会話可能 or 良好な筆談\n- **90-100:** 意識清明、良好な睡眠",
-                        "腎_体液スコア": "- **0-19:** 大量輸液・輸血が必要\n- **20-39:** 大量輸液は不要だが除水はできず\n- **40-59:** バランス±0～-500mL/dayほどの緩徐なマイナスバランス\n- **60-89:** refilling、積極的な除水\n- **90-100:** 適正体重への除水達成",
-                        "活動_リハスコア": "- **0-19:** 体位変換にも制限、ROM訓練のみ\n- **20-39:** ベッド上安静（ギャッジアップなど）\n- **40-59:** 端座位達成\n- **60-89:** 立位達成\n- **90-100:** 室内歩行開始",
-                        "栄養_消化管スコア": "- **0-19:** 絶食、消化管トラブルあり\n- **20-39:** 経腸栄養(少量)開始\n- **40-59:** 経腸栄養を増量中\n- **60-89:** 目標カロリー達成、経口摂取開始\n- **90-100:** 経口摂取が自立",
-                        "感染_炎症スコア": "- **0-19:** 敗血症性ショック\n- **20-39:** マーカー高値だがIL-6、PCT peak out\n- **40-59:** 解熱、CRPもpeak out\n- **60-89:** 抗菌薬のDe-escalation済み、CRP<10mg/dL\n- **90-100:** 抗菌薬終了、炎症反応正常化"
-                    }
-                    factor_scores = {}
-                    all_selected_events = [] # 全てのイベントを一時的に保存するリスト
-                    # 各スコアとイベント入力欄をペアで表示
-                    score_event_map = {
-                        "循環スコア": "#循環", "呼吸スコア": "#呼吸", "意識_鎮静スコア": "#意識/鎮静",
-                        "腎_体液スコア": "#腎/体液", "活動_リハスコア": "#活動/リハ", "栄養_消化管スコア": "#栄養/消化管",
-                        "感染_炎症スコア": "#感染/炎症"
-                    }
+                    
+                    guidelines = {"循環スコア": "- **0-19:** 昇圧薬(高用量) or 補助循環(ECMO/Impella)導入 or 致死的不整脈\n- **20-39:** 昇圧薬(中等量) or 補助循環化に安定\n- **40-59:** 昇圧薬(少量) or 補助循環weaning\n- **60-89:** 昇圧薬離脱 or 補助循環終了\n- **90-100:** 循環動態が安定", "呼吸スコア": "- **0-19:** 高い呼吸器設定、筋弛緩使用\n- **20-39:** 自発呼吸モード、低い呼吸器設定、非挿管だが頻呼吸\n- **40-59:** SBT成功～抜管\n- **60-89:** 抜管～HFNC/NPPV離脱\n- **90-100:** 経鼻酸素～酸素なしで安定", "意識_鎮静スコア": "- **0-19:** 深い鎮静(RASS-4~-5) or 意識障害\n- **20-39:** 浅い鎮静(RASS-1~-3) or せん妄\n- **40-59:** SAT成功\n- **60-89:** 会話可能 or 良好な筆談\n- **90-100:** 意識清明、良好な睡眠", "腎_体液スコア": "- **0-19:** 大量輸液・輸血が必要\n- **20-39:** 大量輸液は不要だが除水はできず\n- **40-59:** バランス±0～-500mL/dayほどの緩徐なマイナスバランス\n- **60-89:** refilling、積極的な除水\n- **90-100:** 適正体重への除水達成", "活動_リハスコア": "- **0-19:** 体位変換にも制限、ROM訓練のみ\n- **20-39:** ベッド上安静（ギャッジアップなど）\n- **40-59:** 端座位達成\n- **60-89:** 立位達成\n- **90-100:** 室内歩行開始", "栄養_消化管スコア": "- **0-19:** 絶食、消化管トラブルあり\n- **20-39:** 経腸栄養(少量)開始\n- **40-59:** 経腸栄養を増量中\n- **60-89:** 目標カロリー達成、経口摂取開始\n- **90-100:** 経口摂取が自立", "感染_炎症スコア": "- **0-19:** 敗血症性ショック\n- **20-39:** マーカー高値だがIL-6、PCT peak out\n- **40-59:** 解熱、CRPもpeak out\n- **60-89:** 抗菌薬のDe-escalation済み、CRP<10mg/dL\n- **90-100:** 抗菌薬終了、炎症反応正常化"}
+
+                    factor_scores = {}; selected_events_map = {}
+                    score_event_map = {"循環スコア": "#循環", "呼吸スコア": "#呼吸", "意識_鎮静スコア": "#意識/鎮静", "腎_体液スコア": "#腎/体液", "活動_リハスコア": "#活動/リハ", "栄養_消化管スコア": "#栄養/消化管", "感染_炎症スコア": "#感染/炎症"}
                     default_event_list = [e.strip() for e in default_values.get("イベント", "").split(',')] if default_values.get("イベント", "") else []
+
                     for score_name, category in score_event_map.items():
-                    # ★★★ ここから修正 ★★★
                         col1, col2 = st.columns([0.85, 0.15])
-                        with col1:
-                        # スコア入力欄の作成をここで行う
-                            factor_scores[score_name] = create_score_input(score_name, default_values.get(score_name, 10), score_name)
-                        with col2:
-                        # 「？」アイコンを隣に配置
-                            st.popover("❓", help="スコアリングの目安").markdown(guidelines[score_name])
-
-                    # カテゴリに一致するイベントリストを作成
+                        with col1: factor_scores[score_name] = create_score_input(score_name, default_values.get(score_name, 10), score_name)
+                        with col2: st.popover("❓", help="スコアリングの目安").markdown(guidelines[score_name])
+                        
                         category_events = [event for event, props in EVENT_FLAGS.items() if props.get("category") == category]
-                        # 既存データから、このカテゴリのイベントのみを抽出してデフォルト値とする
                         default_category_events = [e for e in default_event_list if e in category_events]
+                        selected_events_map[score_name] = st.multiselect(f"{score_name} 関連イベント", options=category_events, default=default_category_events, key=f"{score_name}_events")
 
-                        selected = st.multiselect(f"{score_name} 関連イベント", options=category_events, default=default_category_events, key=f"{score_name}_events")
-                        all_selected_events.extend(selected)
+                        if st.button(f"【{score_name}】と関連イベントのみ記録", key=f"save_{score_name}"):
+                            record_index = st.session_state.df[(st.session_state.df['アプリ用患者ID'] == patient_id_to_use) & (st.session_state.df['日付'] == str(record_date)) & (st.session_state.df['時間帯'] == time_of_day)].index
+                            if record_index.empty:
+                                new_record = {"アプリ用患者ID": patient_id_to_use, "日付": str(record_date), "時間帯": time_of_day}
+                                st.session_state.df = pd.concat([st.session_state.df, pd.DataFrame([new_record])], ignore_index=True)
+                                record_index = st.session_state.df.tail(1).index
+                            
+                            st.session_state.df.loc[record_index, score_name] = factor_scores[score_name]
+                            other_events = [e for e in default_event_list if e not in category_events]
+                            current_events = selected_events_map[score_name]
+                            all_events_str = ", ".join(sorted(list(set(other_events + current_events))))
+                            st.session_state.df.loc[record_index, 'イベント'] = all_events_str
+                            
+                            st.session_state.df.to_csv(DATA_FILE, index=False)
+                            st.success(f"{score_name}と関連イベントを記録しました！"); st.rerun()
                         st.write("---")
 
-                    st.write("**ICU医師 最終判断**")
-                    total_score = create_score_input("総合スコア", default_values.get("総合スコア", 10), "total_score")
-                    # カテゴリに属さない一般イベントの入力
+                    st.write("**ICU医師 最終判断**"); total_score = create_score_input("総合スコア", default_values.get("総合スコア", 10), "total_score")
+                    if st.button("【総合スコア】のみ記録", key="save_total_score"):
+                        record_index = st.session_state.df[(st.session_state.df['アプリ用患者ID'] == patient_id_to_use) & (st.session_state.df['日付'] == str(record_date)) & (st.session_state.df['時間帯'] == time_of_day)].index
+                        if record_index.empty:
+                            new_record = {"アプリ用患者ID": patient_id_to_use, "日付": str(record_date), "時間帯": time_of_day, "総合スコア": total_score}
+                            st.session_state.df = pd.concat([st.session_state.df, pd.DataFrame([new_record])], ignore_index=True)
+                        else:
+                            st.session_state.df.loc[record_index, "総合スコア"] = total_score
+
+                        st.session_state.df.to_csv(DATA_FILE, index=False)
+                        st.success("総合スコアを記録しました！")
+                        st.rerun()
                     general_events_options = [event for event, props in EVENT_FLAGS.items() if props.get("category") == "#その他"]
                     default_general_events = [e for e in default_event_list if e in general_events_options]
-                    selected_general = st.multiselect("その他イベント", options=general_events_options, default=default_general_events, key="general_events")
-                    all_selected_events.extend(selected_general)
+                    selected_general_events = st.multiselect("その他イベント", options=general_events_options, default=default_general_events, key="general_events")
 
-                    # 全てのイベントをカンマ区切り文字列に結合（データ形式を維持）
-                    event_text = ", ".join(all_selected_events)
-                    # ★★★ ここまで全面的に修正 ★★★
-                    previous_total_score = None
-                    if not existing_data.empty:
-                        patient_df_copy = patient_df.copy(); patient_df_copy['日付'] = pd.to_datetime(patient_df_copy['日付'])
-                        patient_df_copy['プロット用日時'] = patient_df_copy.apply(lambda row: row['日付'].replace(hour=8 if row['時間帯'] == '朝' else 20), axis=1)
-                        current_selection_dt = pd.to_datetime(str(record_date)).replace(hour=8 if time_of_day == '朝' else 20)
-                        previous_records = patient_df_copy[patient_df_copy['プロット用日時'] < current_selection_dt]
-                        if not previous_records.empty: previous_total_score = previous_records.sort_values(by='プロット用日時').iloc[-1]['総合スコア']
-                    else: previous_total_score = default_values.get("総合スコア")
-                    if previous_total_score is not None and pd.notna(previous_total_score):
-                        if abs(total_score - previous_total_score) >= 41: st.warning(f"注意：スコアが前回({int(previous_total_score)}点)から41点以上変動しています。内容を確認してください。")
-                    if st.button("記録・修正する"):
-                        new_data_dict = {"アプリ用患者ID": patient_id_to_use, "日付": str(record_date), "時間帯": time_of_day, "総合スコア": total_score, "イベント": event_text, "ステータス": "在室中", "疾患群": disease_group, "要因タグ": ""}
-                        new_data_dict.update(factor_scores); st.session_state.df = pd.concat([st.session_state.df, pd.DataFrame([new_data_dict])], ignore_index=True)
-                        st.session_state.df = st.session_state.df.drop_duplicates(subset=['アプリ用患者ID', '日付', '時間帯'], keep='last').sort_values(by=["アプリ用患者ID", "日付", "時間帯"])
-                        st.session_state.df.to_csv(DATA_FILE, index=False); LOG_FILE = f"{LOG_FILE_PREFIX}{facility_id}.csv"; write_log(LOG_FILE, facility_id, patient_id_to_use, "データ記録/修正")
-                        st.success("データを記録しました！"); st.rerun()
+                    if st.button("【総合スコアと全項目】を一括で記録・修正する", type="primary"):
+                        all_selected_events = selected_general_events
+                        for score_name in score_event_map: all_selected_events.extend(selected_events_map[score_name])
+                        event_text = ", ".join(sorted(list(set(all_selected_events))))
+
+                        new_data_dict = {"アプリ用患者ID": patient_id_to_use, "日付": str(record_date), "時間帯": time_of_day, "総合スコア": total_score, "イベント": event_text, "ステータス": "在室中", "疾患群": disease_group}
+                        new_data_dict.update(factor_scores)
+                        
+                        st.session_state.df = st.session_state.df.drop_duplicates(subset=['アプリ用患者ID', '日付', '時間帯'], keep='last')
+                        record_index = st.session_state.df[(st.session_state.df['アプリ用患者ID'] == patient_id_to_use) & (st.session_state.df['日付'] == str(record_date)) & (st.session_state.df['時間帯'] == time_of_day)].index
+                        if not record_index.empty:
+                            st.session_state.df.update(pd.DataFrame(new_data_dict, index=record_index))
+                        else:
+                            st.session_state.df = pd.concat([st.session_state.df, pd.DataFrame([new_data_dict])], ignore_index=True)
+
+                        st.session_state.df = st.session_state.df.sort_values(by=["アプリ用患者ID", "日付", "時間帯"])
+                        st.session_state.df.to_csv(DATA_FILE, index=False)
+                        LOG_FILE = f"{LOG_FILE_PREFIX}{facility_id}.csv"
+                        write_log(LOG_FILE, facility_id, patient_id_to_use, "データ一括記録/修正")
+                        st.success("全項目を記録しました！"); st.rerun()
+
+            # --- ログアウトボタン ---
             st.write("---")
             if st.button("ログアウト"):
-                for key in list(st.session_state.keys()): del st.session_state[key]
+                for key in list(st.session_state.keys()):
+                    del st.session_state[key]
                 st.rerun()
         # メイン画面
         if facility_id == st.secrets.get("master_credentials", {}).get("id", "master_admin_fallback"):
@@ -296,11 +338,17 @@ def run_app():
                             with cols_metric[0]:
                                 if previous_record is not None:
                                     phase_color = PHASE_COLORS.get(previous_record['フェーズ'], '#888')
-                                    st.markdown(f'<div class="metric-container"> <div style="font-size: 14px; color: #888;">前回 ({previous_record["日付"].strftime("%m/%d")} {previous_record["時間帯"]})</div> <div style="font-size: 32px; font-weight: bold; color: #333;">{int(previous_record["総合スコア"])}</div> <div style="font-size: 18px; font-weight: bold; color: {phase_color};">{previous_record["フェーズ"]}</div> </div>', unsafe_allow_html=True)
+                                    # ★★★ ここから修正 ★★★
+                                    score_display = int(previous_record["総合スコア"]) if pd.notna(previous_record["総合スコア"]) else "-"
+                                    st.markdown(f'<div class="metric-container"> <div style="font-size: 14px; color: #888;">前回 ({previous_record["日付"].strftime("%m/%d")} {previous_record["時間帯"]})</div> <div style="font-size: 32px; font-weight: bold; color: #333;">{score_display}</div> <div style="font-size: 18px; font-weight: bold; color: {phase_color};">{previous_record["フェーズ"]}</div> </div>', unsafe_allow_html=True)
+                                    # ★★★ ここまで修正 ★★★
                                 else: st.info("比較対象の前回データがありません。")
                             with cols_metric[1]:
                                 phase_color = PHASE_COLORS.get(current_record['フェーズ'], '#888')
-                                st.markdown(f'<div class="metric-container"> <div style="font-size: 14px; color: #888;">今回 ({current_record["日付"].strftime("%m/%d")} {current_record["時間帯"]})</div> <div style="font-size: 32px; font-weight: bold; color: #1f497d;">{int(current_record["総合スコア"])}</div> <div style="font-size: 18px; font-weight: bold; color: {phase_color};">{current_record["フェーズ"]}</div> </div>', unsafe_allow_html=True)
+                                # ★★★ ここから修正 ★★★
+                                score_display = int(current_record["総合スコア"]) if pd.notna(current_record["総合スコア"]) else "-"
+                                st.markdown(f'<div class="metric-container"> <div style="font-size: 14px; color: #888;">今回 ({current_record["日付"].strftime("%m/%d")} {current_record["時間帯"]})</div> <div style="font-size: 32px; font-weight: bold; color: #1f497d;">{score_display}</div> <div style="font-size: 18px; font-weight: bold; color: {phase_color};">{current_record["フェーズ"]}</div> </div>', unsafe_allow_html=True)
+                                # ★★★ ここまで修正 ★★★                            
                             st.write("---"); st.subheader("コンディションサマリー（比較）")
                             current_data = current_record[FACTOR_SCORE_NAMES].to_dict(); previous_data = previous_record[FACTOR_SCORE_NAMES].to_dict() if previous_record is not None else None
                             current_label, previous_label, current_color, previous_color, current_style, previous_style = ("当日 夕", "当日 朝", 'red', 'blue', '-', '-') if selected_time == '夕' else ("当日 朝", "前日 夕", 'blue', 'red', '-', '--')
@@ -368,13 +416,18 @@ def run_app():
                 st.write(f"**{patient_id_to_use} の管理**")
                 outcome_options = ["", "軽快", "転棟", "死亡", "その他"]; selected_outcome = st.selectbox("退室時転帰を選択してください:", options=outcome_options)
                 if st.button(f"{patient_id_to_use} を退室済（アーカイブ）にする"):
-                    if selected_outcome:
-                        patient_indices = st.session_state.df[st.session_state.df['アプリ用患者ID'] == patient_id_to_use].index
-                        if not patient_indices.empty:
-                            last_index = patient_indices[-1]; st.session_state.df.loc[last_index, '退室時転帰'] = selected_outcome
-                        st.session_state.df.loc[st.session_state.df['アプリ用患者ID'] == patient_id_to_use, 'ステータス'] = '退室済'
-                        st.session_state.df.to_csv(DATA_FILE, index=False); st.success(f"{patient_id_to_use} さんを「{selected_outcome}」としてアーカイブしました。"); st.rerun()
-                    else: st.warning("退室時転帰を選択してください。")
+                    if st.session_state.get("trial_mode"):
+                        # トライアルモードの場合、データを破棄
+                        st.session_state.df = st.session_state.df[st.session_state.df['アプリ用患者ID'] != patient_id_to_use]
+                        st.success(f"【お試しモード】{patient_id_to_use} さんのデータは破棄されました。")
+                    else:
+                        if selected_outcome:
+                            patient_indices = st.session_state.df[st.session_state.df['アプリ用患者ID'] == patient_id_to_use].index
+                            if not patient_indices.empty:
+                                last_index = patient_indices[-1]; st.session_state.df.loc[last_index, '退室時転帰'] = selected_outcome
+                            st.session_state.df.loc[st.session_state.df['アプリ用患者ID'] == patient_id_to_use, 'ステータス'] = '退室済'
+                            st.session_state.df.to_csv(DATA_FILE, index=False); st.success(f"{patient_id_to_use} さんを「{selected_outcome}」としてアーカイブしました。"); st.rerun()
+                        else: st.warning("退室時転帰を選択してください。")
             show_archive = st.checkbox("アーカイブされた患者を表示")
             if show_archive:
                 archived_df = st.session_state.df[st.session_state.df['ステータス'] == '退室済']; st.write("#### 退室済（アーカイブ）患者一覧"); st.dataframe(archived_df); st.write("---")
@@ -385,13 +438,38 @@ def run_app():
                         if st.button("在室中に戻す", key=f"reactivate_{patient_id}", use_container_width=True):
                             st.session_state.df.loc[st.session_state.df['アプリ用患者ID'] == patient_id, 'ステータス'] = '在室中'
                             st.session_state.df.to_csv(DATA_FILE, index=False); st.success(f"{patient_id}さんを在室中に戻しました。"); st.rerun()
-            st.write("---"); st.subheader("データのエクスポート")
+        if not st.session_state.get("trial_mode"):
+            st.write("---")
+            st.subheader("データのエクスポート")
+            # 1. 患者データのダウンロード
             csv_patient_data = st.session_state.df.to_csv(index=False).encode('utf-8-sig')
-            st.download_button(label="患者データをCSVでダウンロード", data=csv_patient_data, file_name=f"patient_data_{facility_id}_{datetime.date.today()}.csv", mime='text/csv')
+            st.download_button(
+                label="患者データをCSVでダウンロード",
+                data=csv_patient_data,
+                file_name=f"patient_data_{facility_id}_{datetime.date.today()}.csv",
+                mime='text/csv',
+            )
+            # 2. 操作ログのダウンロード
             LOG_FILE = f"{LOG_FILE_PREFIX}{facility_id}.csv"
             if os.path.exists(LOG_FILE):
-                with open(LOG_FILE, "rb") as file: st.download_button(label="操作ログをCSVでダウンロード", data=file, file_name=f"log_data_{facility_id}_{datetime.date.today()}.csv", mime='text/csv')
+                with open(LOG_FILE, "rb") as file:
+                    st.download_button(
+                        label="操作ログをCSVでダウンロード",
+                        data=file,
+                        file_name=f"log_data_{facility_id}_{datetime.date.today()}.csv",
+                        mime='text/csv',
+                    )
             st.write("---"); st.header("統計ダッシュボード")
+                    # ★★★ ここから修正 ★★★
+        if st.session_state.get("trial_mode"):
+            st.info("現在はお試しモードです。統計ダッシュボードのサンプルが表示されています。")
+            # ここでサンプル画像などを表示できます。
+            st.image("統計ダッシュボードサンプル1.png")
+            st.image("統計ダッシュボードサンプル2.png")
+            st.image("統計ダッシュボードサンプル3.png")
+            st.image("統計ダッシュボードサンプル4.png")
+        else:
+            # 通常モードの場合、既存のダッシュボードロジックを実行
             archived_df_dashboard = st.session_state.df[st.session_state.df['ステータス'] == '退室済'].copy()
             archived_df_dashboard = calculate_derived_columns(archived_df_dashboard)
             archived_df_dashboard['プロット用経過日数'] = archived_df_dashboard.apply(lambda row: row['経過日数'] + 0.5 if row['時間帯'] == '夕' else row['経過日数'], axis=1)
